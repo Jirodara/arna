@@ -1,0 +1,18 @@
+{
+  "name": "ARNA Kripto Sinyal",
+  "short_name": "ARNA",
+  "description": "Binance TR kripto sinyal sistemi",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#00e676",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
