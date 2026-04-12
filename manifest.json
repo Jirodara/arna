@@ -1,13 +1,11 @@
 {
-  "name": "ARNA Kripto Sinyal",
+  "name": "ARNA — Kripto Analiz",
   "short_name": "ARNA",
-  "description": "Binance TR — Akıllı Kripto Sinyal Sistemi",
+  "description": "Ekran görüntüsü at, AI analiz etsin",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#080c14",
-  "theme_color": "#00e676",
+  "background_color": "#05080f",
+  "theme_color": "#00ff88",
   "orientation": "portrait-primary",
-  "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ]
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }
