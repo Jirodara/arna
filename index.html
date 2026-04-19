@@ -730,20 +730,31 @@ function closeWS(){
 
 async function pollPrice(sym){
   if(!trade || trade.symbol !== sym) return;
-  try{
-    const r = await fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol='+sym);
-    if(r.ok){
-      const d = await r.json();
-      const price = parseFloat(d.price);
-      if(price && trade && trade.symbol === sym){
-        trade.livePrice = price;
-        setLive(true);
-        updateTrail(price);
-        updateTradePNL();
-        checkExit();
+  const endpoints = [
+    'https://data-api.binance.vision/api/v3/ticker/price?symbol=',
+    'https://api.binance.com/api/v3/ticker/price?symbol=',
+    'https://api1.binance.com/api/v3/ticker/price?symbol=',
+  ];
+  let success = false;
+  for(const ep of endpoints){
+    try{
+      const r = await fetch(ep + sym);
+      if(r.ok){
+        const d = await r.json();
+        const price = parseFloat(d.price);
+        if(price && trade && trade.symbol === sym){
+          trade.livePrice = price;
+          setLive(true);
+          updateTrail(price);
+          updateTradePNL();
+          checkExit();
+          success = true;
+          break;
+        }
       }
-    }
-  }catch(e){ setLive(false); }
+    }catch(e){ continue; }
+  }
+  if(!success) setLive(false);
   // 3 saniyede bir tekrar
   if(trade && trade.symbol === sym){
     pricePoller = setTimeout(()=>pollPrice(sym), 3000);
@@ -1950,6 +1961,13 @@ function renderPerf(){
 
 /* ── UTILS ── */
 function fmtV(v){ if(v>=1e9)return(v/1e9).toFixed(1)+'B'; if(v>=1e6)return(v/1e6).toFixed(1)+'M'; return(v/1e3).toFixed(0)+'K'; }
+function fmtP(v){
+  if(!v||isNaN(v)) return '—';
+  if(v>=1000) return v.toFixed(2);
+  if(v>=1)    return v.toFixed(4);
+  if(v>=0.01) return v.toFixed(5);
+  return v.toFixed(6);
+}
 function notify(t,b){ if(typeof Notification!=='undefined'&&Notification.permission==='granted') try{new Notification(t,{body:b,icon:'./icon.svg'});}catch(e){} }
 if(typeof Notification!=='undefined'&&Notification.permission==='default') Notification.requestPermission();
 
