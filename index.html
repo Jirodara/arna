@@ -873,7 +873,11 @@ window.enterTrade = function(idx){
   const posUSD   = Math.min(parseFloat(document.getElementById('p-pos').value)||400, demoBal);
   const trailPct = parseFloat(document.getElementById('p-trail').value)||1.5;
   const tpPct    = s.score>=85?5 : s.score>=75?3.5 : 2.5;
-  const initSL   = s.swingLow ? Math.min(s.swingLow, s.price*(1-trailPct/100)) : s.price*(1-trailPct/100);
+  // SL = trailing % ile hesapla, ama swing low daha yakınsa onu kullan
+  // Swing low çok uzaksa (>%3) trailing %'yi kullan
+  const trailSL   = s.price*(1-trailPct/100);
+  const swingDiff = s.swingLow ? (s.price-s.swingLow)/s.price*100 : 999;
+  const initSL    = (s.swingLow && swingDiff <= 3) ? Math.max(s.swingLow, trailSL) : trailSL;
 
   trade = {
     id:Date.now(), symbol:s.symbol, displayName:s.displayName,
@@ -1599,6 +1603,16 @@ async function startScan(){
     stepRun('s6'); setP(90,'Sinyaller sıralanıyor...');
 
     results.sort((a,b)=>b.score-a.score);
+    // Geçmişte zararlı kapanan coinleri filtrele
+    const badCoins = new Set(
+      history.filter(h=>h.result==='lose'&&h.exitReason==='SL'&&(Date.now()-h.exitTime)<3600000)
+             .map(h=>h.symbol)
+    );
+    if(badCoins.size>0){
+      const before=results.length;
+      results=results.filter(r=>!badCoins.has(r.symbol));
+      if(before>results.length) log('🚫 Son 1 saatte SL ile kapanan '+(before-results.length)+' coin filtrelendi','gold');
+    }
     signals=results;
     stepDone('s6'); setP(100,'✓ Tamamlandı');
 
@@ -1610,6 +1624,8 @@ async function startScan(){
     }
     if(buyN>0){ sndSignal(); notify('🚀 ARNA',buyN+' AL sinyali bulundu!'); }
     if(signals.length) goTab('signals');
+    // OTO modda tarama bitti → otomatik giriş dene
+    if(autoOn && !trade) setTimeout(autoEnter, 1000);
 
   }catch(err){
     log('❌ Hata: '+err.message,'dn');
@@ -1635,13 +1651,39 @@ function toggleAuto(){
   const btn=document.getElementById('btnAuto');
   if(autoOn){
     btn.textContent='OTO: AÇIK'; btn.className='btn-auto on';
-    autoTimer=setInterval(()=>{if(!scanning)startScan();},120000);
-    log('Otomatik tarama açıldı (2dk)','gold');
+    // Her 2 dakikada tara + otomatik al
+    autoTimer=setInterval(async()=>{
+      if(!scanning) await startScan();
+      autoEnter(); // Tarama bitti, otomatik giriş dene
+    }, 120000);
+    log('🤖 Otomatik mod açıldı — tarar, alır, satar','gold');
+    notify('🤖 ARNA OTO AÇIK','Sistem otomatik işlem yapıyor');
   }else{
     btn.textContent='OTO: KAPALI'; btn.className='btn-auto';
     if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
-    log('Otomatik tarama durduruldu','gold');
+    log('Otomatik mod kapatıldı','gold');
   }
+}
+
+// Otomatik giriş — en yüksek skorlu BUY sinyaline gir
+function autoEnter(){
+  if(!autoOn) return;
+  if(trade){ 
+    log('🤖 OTO: Açık işlem var, bekleniyor...','blue');
+    return;
+  }
+  // BUY sinyallerini filtrele, en yüksek skoru al
+  const buys = signals.filter(s=>s.verdict==='BUY' && s.score>=80);
+  if(!buys.length){
+    log('🤖 OTO: BUY sinyali yok, bekleniyor...','gold');
+    return;
+  }
+  const best = buys[0]; // Zaten skora göre sıralı
+  log('🤖 OTO GİRİŞ: '+best.displayName+' skor:'+best.score,'up');
+  notify('🤖 OTO GİRİŞ', best.displayName+' @ $'+fmtP(best.price)+' skor:'+best.score);
+  // Sinyal indeksini bul
+  const idx = signals.indexOf(best);
+  if(idx>=0) enterTrade(idx);
 }
 
 function setP(pct,txt){
