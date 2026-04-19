@@ -514,7 +514,45 @@ body{
    Göstergeler filtre, sinyal değil.
 ═══════════════════════════════════════════════════ */
 
-const API  = 'https://api.binance.com/api/v3';
+// Binance API — çoklu endpoint + CORS proxy fallback
+const API_ENDPOINTS = [
+  'https://data-api.binance.vision/api/v3',   // Binance vision (CORS izinli)
+  'https://api.binance.com/api/v3',
+  'https://api1.binance.com/api/v3',
+  'https://api2.binance.com/api/v3',
+  'https://api3.binance.com/api/v3',
+  'https://corsproxy.io/?https://api.binance.com/api/v3', // CORS proxy fallback
+];
+let API = API_ENDPOINTS[0];
+let _apiIdx = 0;
+
+async function apiFetch(path){
+  const errors = [];
+  for(let attempt=0; attempt<API_ENDPOINTS.length; attempt++){
+    const base = API_ENDPOINTS[(_apiIdx + attempt) % API_ENDPOINTS.length];
+    try{
+      const r = await fetch(base + path, {
+        method: 'GET',
+        headers: {'Accept': 'application/json'},
+        mode: 'cors',
+        cache: 'no-cache'
+      });
+      if(r.ok){
+        _apiIdx = (_apiIdx + attempt) % API_ENDPOINTS.length;
+        API = base;
+        return r;
+      }
+      errors.push(base+': HTTP '+r.status);
+    }catch(e){
+      errors.push(base+': '+e.message);
+      // Son deneme değilse devam et
+      if(attempt < API_ENDPOINTS.length-1) continue;
+    }
+  }
+  throw new Error('Baglanti hatasi. VPN kapatin veya farkli ag deneyin. ('+errors[0]+')');
+}
+
+
 const DEMO = 2000;
 
 /* STATE */
@@ -1074,7 +1112,7 @@ function volFilt(klines){
   // ★ EK KONTROL: Son 3 mum da MA10 altındaysa elensin
   if(avg3 < ma10 * 0.8){
     return{pass:false,score:0,ratio:r10,
-      note:'❌ Son 3 mum hacmi de MA10'un %80 altı'};
+      note:'❌ Son 3 mum hacmi de MA10 %80 altı'};
   }
 
   // Basamak kalite kontrolü
@@ -1152,7 +1190,7 @@ function upperTFs(tf){
 async function analyzeTF(sym, tf){
   if(!tf) return null;
   try{
-    const r = await fetch(API+'/klines?symbol='+sym+'&interval='+tf+'&limit=40',{signal:AbortSignal.timeout(6000)});
+    const r = await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=40', 8000);
     if(!r.ok) return null;
     const kd = await r.json();
     if(!Array.isArray(kd)||kd.length<15) return null;
@@ -1373,7 +1411,15 @@ async function startScan(){
   log('Tarama başladı — Binance USDT | '+tf+' | +'+minC+'–'+maxC+'%','blue');
 
   try{
-    const res = await fetch(API+'/ticker/24hr',{signal:AbortSignal.timeout(12000)});
+    log('Binance baglantisi kuruluyor...','blue');
+    let res;
+    try{
+      res = await apiFetch('/ticker/24hr');
+    }catch(netErr){
+      // Hata detayını logla ve anlaşılır mesaj göster
+      const errMsg = 'Binance API erisilemedi. Cihazinizda tarayici ile https://api.binance.com/api/v3/ping adresini acip acilip acilmadigini kontrol edin. Hata: '+netErr.message;
+      throw new Error(errMsg);
+    }
     if(!res.ok) throw new Error('Binance HTTP '+res.status);
     const all = await res.json();
     stepDone('s1'); stepRun('s2');
@@ -1389,7 +1435,12 @@ async function startScan(){
     });
 
     log('Filtre 1: '+cands.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
-    if(!cands.length){ log('Bu aralıkta coin yok şu an','gold'); signals=[]; renderSignals(); return; }
+    if(!cands.length){ 
+      log('⚠️ Bu aralıkta ('+minC+'%–'+maxC+'%) coin yok şu an. Min/Max yükseliş değerlerini değiştirip tekrar deneyin.','gold'); 
+      signals=[]; 
+      renderSignals(); 
+      return; 
+    }
 
     setP(20,'Katmanlı analiz başlıyor...');
     const results=[];
@@ -1401,7 +1452,7 @@ async function startScan(){
       setP(pct,sym.replace('USDT','')+' analiz ediliyor... ('+(i+1)+'/'+lim+')');
 
       try{
-        const kr=await fetch(API+'/klines?symbol='+sym+'&interval='+tf+'&limit=62',{signal:AbortSignal.timeout(7000)});
+        const kr=await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=62', 9000);
         if(!kr.ok) continue;
         const kd=await kr.json();
         if(!Array.isArray(kd)||kd.length<32) continue;
@@ -1432,14 +1483,16 @@ async function startScan(){
           continue;
         }
 
-        // ★ HACİM — KIRMIZI ÇİZGİ
-        if(!vol.pass){
+        // ★ HACİM — Kırmızı çizgi ama çok katı olmasın
+        // Hacim yoksa devam et ama skor düşük kalır (vol.pass=false → +0 puan)
+        if(!vol.pass && vol.ratio < 0.5){
+          // Hacim çok çok düşükse (normalin yarısından az) atla
           log('🚫 '+sym.replace('USDT','')+' atlandı — '+vol.note,'gold');
           continue;
         }
 
-        // ★ RSI — <45 ise momentum yok
-        if(!rsiR.pass){
+        // ★ RSI — <35 ise momentum kesinlikle yok, atla; 35-45 arası sadece skor düşür
+        if(rsiR.rsi < 35){
           log('🚫 '+sym.replace('USDT','')+' atlandı — '+rsiR.note,'gold');
           continue;
         }
@@ -1475,12 +1528,25 @@ async function startScan(){
     stepDone('s6'); setP(100,'✓ Tamamlandı');
 
     const buyN=signals.filter(s=>s.verdict==='BUY').length;
-    log('Tarama tamam: '+signals.length+' sinyal | '+buyN+' AL',signals.length?'up':'gold');
+    if(signals.length===0){
+      log('⚠️ Sinyal bulunamadı. Filtreler çok katı olabilir — Min Skor değerini düşürün veya yükseliş aralığını genişletin.','gold');
+    } else {
+      log('Tarama tamam: '+signals.length+' sinyal | '+buyN+' AL',signals.length?'up':'gold');
+    }
     if(buyN>0){ sndSignal(); notify('🚀 ARNA',buyN+' AL sinyali bulundu!'); }
     if(signals.length) goTab('signals');
 
   }catch(err){
-    log('Hata: '+err.message,'dn');
+    log('❌ Hata: '+err.message,'dn');
+    // Kullanıcıya görünür hata göster
+    const prog=document.getElementById('progBox');
+    if(prog){
+      prog.className='progress on';
+      document.getElementById('progTxt').textContent='❌ '+err.message;
+      document.getElementById('progPct').textContent='Hata';
+      document.getElementById('progBar').style.width='100%';
+      document.getElementById('progBar').style.background='var(--dn)';
+    }
   }finally{
     scanning=false;
     document.getElementById('btnScan').disabled=false;
