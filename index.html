@@ -785,14 +785,16 @@ function updateTrail(price){
   const newSL = price*(1-trade.trailPct/100);
   if(newSL > trade.trailSL) trade.trailSL = newSL;
 
-  // TP aşıldıysa SL'yi daha agresif yükselt (kar kilitle)
+  // Karda olunca SL'yi akıllıca yükselt
   const pnlPct = (price-trade.entry)/trade.entry*100;
-  if(pnlPct >= trade.tpPct * 0.8){
-    // TP'nin %80'ine ulaştı — SL'yi giriş fiyatına sabitle (en az BEP)
-    const bepSL = trade.entry * 1.001; // Giriş + %0.1 (komisyon karşılığı)
-    if(bepSL > trade.trailSL){
-      trade.trailSL = bepSL;
-    }
+  if(pnlPct >= trade.tpPct){
+    // TP'ye ulaştı — SL'yi kârın %60'ını koruyacak seviyeye çek
+    const lockSL = trade.entry + (price - trade.entry) * 0.6;
+    if(lockSL > trade.trailSL) trade.trailSL = lockSL;
+  } else if(pnlPct >= trade.tpPct * 0.5){
+    // TP'nin %50'sine ulaştı — en azından giriş fiyatını koru (BEP)
+    const bepSL = trade.entry * 1.002;
+    if(bepSL > trade.trailSL) trade.trailSL = bepSL;
   }
 }
 
@@ -828,7 +830,7 @@ function updateTradePNL(){
   }
   if(lp>=trade.targetTP&&(!alCD.tp||now-alCD.tp>60000)){
     alCD.tp=now; sndWin();
-    const yeniTP=(trade.targetTP*1.025).toFixed(4);
+    const yeniTP=(trade.targetTP*1.012).toFixed(4); // %1.2 yukarı — daha makul
     notify('💰 TP AŞİLDİ!',trade.displayName+' +'+pnl.toFixed(2)+'$ — Yeni TP önerisi: $'+yeniTP);
     showTPOffer(lp,pnl,parseFloat(yeniTP));
   }
@@ -1373,7 +1375,7 @@ async function checkUpperTFs(){
   } else if(bothStrong && pnlPct > 0){
     // Her iki TF güçlü + karda → TP yükselt
     trade.lastUpperAction = now;
-    const newTP = trade.targetTP * 1.025;
+    const newTP = trade.targetTP * 1.012; // %1.2 yukarı
     applyUpperTFDecision('strong', tf1, tf2, pnl, newTP);
   }
 }
