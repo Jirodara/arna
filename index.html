@@ -1540,7 +1540,7 @@ async function startScan(){
       if(+t.count < 5000) return false;
       // TRY fiyatını USD'ye çevir
       const priceUSD = isTRY ? +t.lastPrice/usdTry : +t.lastPrice;
-      if(priceUSD < 0.000001) return false;
+      // Fiyat buyuklugune gore eleme yok — kucuk fiyatli coinler de katilabilir
       const c = +t.priceChangePercent;
       return c>=minC && c<=maxC;
     }).map(ticker=>{
@@ -2239,11 +2239,19 @@ async function requestPush(){
 // Sayfa açılınca sor
 setTimeout(requestPush, 2000);
 function fmtP(v){
-  if(!v||isNaN(v)) return '—';
-  if(v>=1000) return v.toFixed(2);
-  if(v>=1)    return v.toFixed(4);
-  if(v>=0.01) return v.toFixed(5);
-  return v.toFixed(6);
+  if(v===null||v===undefined||isNaN(v)) return '—';
+  if(v===0) return '0';
+  if(v>=1000)      return v.toFixed(2);
+  if(v>=1)         return v.toFixed(4);
+  if(v>=0.1)       return v.toFixed(5);
+  if(v>=0.01)      return v.toFixed(6);
+  if(v>=0.001)     return v.toFixed(7);
+  if(v>=0.0001)    return v.toFixed(8);
+  if(v>=0.00001)   return v.toFixed(9);
+  if(v>=0.000001)  return v.toFixed(10);
+  // Çok küçük sayılar için anlamlı basamak göster
+  const s = v.toPrecision(6);
+  return parseFloat(s).toString();
 }
 function notify(t,b){ if(typeof Notification!=='undefined'&&Notification.permission==='granted') try{new Notification(t,{body:b,icon:'./icon.svg'});}catch(e){} }
 if(typeof Notification!=='undefined'&&Notification.permission==='default') Notification.requestPermission();
