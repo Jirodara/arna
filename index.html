@@ -1516,15 +1516,43 @@ async function startScan(){
     stepDone('s1'); stepRun('s2');
     setP(15,'Fiyat filtresi...');
 
-    const SKIP = new Set(['BUSDUSDT','USDCUSDT','TUSDUSDT','FDUSDUSDT','DAIUSDT','USDPUSDT','EURUSDT','GBPUSDT']);
+    const SKIP = new Set(['BUSDUSDT','USDCUSDT','TUSDUSDT','FDUSDUSDT','DAIUSDT','USDPUSDT','EURUSDT','GBPUSDT',
+      'BUSDTRY','USDCTRY','TUSDTRY','FDUSDTRY','DAITRY','USDPTRY','EUРТRY']);
+
+    // USD/TRY kurunu çek
+    let usdTry = 38.5; // Fallback kur
+    try{
+      const fxR = await fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol=USDTTRY');
+      if(fxR.ok){ const fxD=await fxR.json(); usdTry=parseFloat(fxD.price)||38.5; }
+    }catch(e){}
+    log('💱 USD/TRY kuru: '+usdTry.toFixed(2),'blue');
+
     const cands = all.filter(t=>{
-      if(!t.symbol.endsWith('USDT')) return false;
+      const isUSDT = t.symbol.endsWith('USDT');
+      const isTRY  = t.symbol.endsWith('TRY');
+      if(!isUSDT && !isTRY) return false;
       if(SKIP.has(t.symbol)) return false;
-      if(+t.quoteVolume < 5000000) return false; // Min $5M 24s hacim — düşük likidite/delisted coinleri ele
-      if(+t.count < 5000) return false;          // Min 5000 işlem — aktif piyasa kontrolü
-      if(+t.lastPrice < 0.000001) return false;  // Çok düşük fiyatlı coinleri ele
+      // TRY çiftlerinde hacim TRY cinsinden — USDT'ye çevir
+      const volUSD = isTRY ? +t.quoteVolume/usdTry : +t.quoteVolume;
+      if(volUSD < 2000000) return false; // Min $2M
+      if(+t.count < 5000) return false;
+      // TRY fiyatını USD'ye çevir
+      const priceUSD = isTRY ? +t.lastPrice/usdTry : +t.lastPrice;
+      if(priceUSD < 0.000001) return false;
       const c = +t.priceChangePercent;
       return c>=minC && c<=maxC;
+    }).map(ticker=>{
+      // TRY çiftlerinde fiyatı USD'ye normalize et
+      if(ticker.symbol.endsWith('TRY')){
+        const normalized = Object.assign({}, ticker);
+        normalized._originalSymbol = ticker.symbol;
+        normalized.symbol = ticker.symbol.replace('TRY','USDT');
+        normalized.lastPrice = (+ticker.lastPrice/usdTry).toString();
+        normalized.quoteVolume = (+ticker.quoteVolume/usdTry).toString();
+        normalized._isTRY = true;
+        return normalized;
+      }
+      return ticker;
     });
 
     log('Filtre 1: '+cands.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
