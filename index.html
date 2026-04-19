@@ -446,7 +446,10 @@ body{
       </div>
       <div class="scan-actions">
         <button class="btn-scan" id="btnScan" onclick="startScan()">⚡ TARA</button>
-        <button class="btn-auto" id="btnAuto" onclick="toggleAuto()">OTO: KAPALI</button>
+        <button class="btn-auto" id="btnAutoScan" onclick="toggleAutoScan()">🔄 OTO TARA</button>
+      </div>
+      <div style="margin-top:8px">
+        <button class="btn-auto" id="btnAutoTrade" onclick="toggleAutoTrade()" style="width:100%;text-align:center">🤖 OTO AL/SAT: KAPALI</button>
       </div>
     </div>
 
@@ -1508,7 +1511,9 @@ async function startScan(){
     const cands = all.filter(t=>{
       if(!t.symbol.endsWith('USDT')) return false;
       if(SKIP.has(t.symbol)) return false;
-      if(+t.quoteVolume < 1000000) return false; // Min $1M 24s hacim
+      if(+t.quoteVolume < 5000000) return false; // Min $5M 24s hacim — düşük likidite/delisted coinleri ele
+      if(+t.count < 5000) return false;          // Min 5000 işlem — aktif piyasa kontrolü
+      if(+t.lastPrice < 0.000001) return false;  // Çok düşük fiyatlı coinleri ele
       const c = +t.priceChangePercent;
       return c>=minC && c<=maxC;
     });
@@ -1624,8 +1629,8 @@ async function startScan(){
     }
     if(buyN>0){ sndSignal(); notify('🚀 ARNA',buyN+' AL sinyali bulundu!'); }
     if(signals.length) goTab('signals');
-    // OTO modda tarama bitti → otomatik giriş dene
-    if(autoOn && !trade) setTimeout(autoEnter, 1000);
+    // OTO AL/SAT modda tarama bitti → otomatik giriş dene
+    if(autoTradeOn && !trade) setTimeout(autoEnter, 1000);
 
   }catch(err){
     log('❌ Hata: '+err.message,'dn');
@@ -1646,28 +1651,45 @@ async function startScan(){
   }
 }
 
-function toggleAuto(){
-  autoOn=!autoOn;
-  const btn=document.getElementById('btnAuto');
-  if(autoOn){
-    btn.textContent='OTO: AÇIK'; btn.className='btn-auto on';
-    // Her 2 dakikada tara + otomatik al
-    autoTimer=setInterval(async()=>{
-      if(!scanning) await startScan();
-      autoEnter(); // Tarama bitti, otomatik giriş dene
-    }, 120000);
-    log('🤖 Otomatik mod açıldı — tarar, alır, satar','gold');
-    notify('🤖 ARNA OTO AÇIK','Sistem otomatik işlem yapıyor');
-  }else{
-    btn.textContent='OTO: KAPALI'; btn.className='btn-auto';
-    if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
-    log('Otomatik mod kapatıldı','gold');
+let autoScanOn = false, autoTradeOn = false;
+let autoScanTimer = null;
+
+function toggleAutoScan(){
+  autoScanOn = !autoScanOn;
+  const btn = document.getElementById('btnAutoScan');
+  if(autoScanOn){
+    btn.textContent='🔄 OTO TARA: AÇIK'; btn.className='btn-auto on';
+    autoScanTimer = setInterval(()=>{ if(!scanning) startScan(); }, 120000);
+    log('🔄 Otomatik tarama açıldı (2dk)','gold');
+  } else {
+    btn.textContent='🔄 OTO TARA'; btn.className='btn-auto';
+    if(autoScanTimer){ clearInterval(autoScanTimer); autoScanTimer=null; }
+    log('🔄 Otomatik tarama durduruldu','gold');
   }
 }
 
+function toggleAutoTrade(){
+  autoTradeOn = !autoTradeOn;
+  const btn = document.getElementById('btnAutoTrade');
+  if(autoTradeOn){
+    btn.textContent='🤖 OTO AL/SAT: AÇIK'; btn.className='btn-auto on';
+    log('🤖 Otomatik AL/SAT açıldı — sinyal gelince alır, SL/TP ile satar','gold');
+    notify('🤖 OTO AL/SAT AÇIK','Sistem otomatik işlem yapıyor');
+    // Şu an sinyal varsa hemen dene
+    if(signals.length && !trade) autoEnter();
+  } else {
+    btn.textContent='🤖 OTO AL/SAT: KAPALI'; btn.className='btn-auto';
+    log('🤖 Otomatik AL/SAT durduruldu','gold');
+  }
+}
+
+// Geriye dönük uyumluluk
+function toggleAuto(){ toggleAutoScan(); }
+// autoOn — eski tanım üstte mevcut
+
 // Otomatik giriş — en yüksek skorlu BUY sinyaline gir
 function autoEnter(){
-  if(!autoOn) return;
+  if(!autoTradeOn) return;
   if(trade){ 
     log('🤖 OTO: Açık işlem var, bekleniyor...','blue');
     return;
