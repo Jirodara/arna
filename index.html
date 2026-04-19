@@ -390,6 +390,11 @@ body{
         <div class="tb-cell"><div class="tb-label">Trailing SL</div><div class="tb-val" id="tb-tsl" style="color:var(--dn)">—</div></div>
         <div class="tb-cell"><div class="tb-label">TP Hedef</div><div class="tb-val" id="tb-tp" style="color:var(--up)">—</div></div>
       </div>
+      <!-- CANLI GRAFİK -->
+      <div id="liveChartWrap" style="padding:0 14px 10px;display:none">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:1px">Canlı Grafik</div>
+        <canvas id="liveChart" height="80" style="width:100%;border-radius:6px;background:var(--ink2);display:block"></canvas>
+      </div>
       <div class="trail-bar-wrap">
         <div class="trail-labels">
           <span id="tbl-sl">SL</span>
@@ -764,8 +769,19 @@ async function pollPrice(sym){
 /* ── TRAILING STOP ── */
 function updateTrail(price){
   if(!trade) return;
+  // Normal trailing
   const newSL = price*(1-trade.trailPct/100);
   if(newSL > trade.trailSL) trade.trailSL = newSL;
+
+  // TP aşıldıysa SL'yi daha agresif yükselt (kar kilitle)
+  const pnlPct = (price-trade.entry)/trade.entry*100;
+  if(pnlPct >= trade.tpPct * 0.8){
+    // TP'nin %80'ine ulaştı — SL'yi giriş fiyatına sabitle (en az BEP)
+    const bepSL = trade.entry * 1.001; // Giriş + %0.1 (komisyon karşılığı)
+    if(bepSL > trade.trailSL){
+      trade.trailSL = bepSL;
+    }
+  }
 }
 
 /* ── TRADE PNL ── */
@@ -812,12 +828,42 @@ function checkExit(){
   if(!trade) return;
   const lp=trade.livePrice, ep=trade.entry;
   const pct=(lp-ep)/ep*100;
+  const now=Date.now();
+
+  // 1. OTOMATİK SL KAPANMASI — SL kırıldıysa hemen kapat
+  if(lp <= trade.trailSL){
+    const pnl=(lp-ep)/ep*trade.posUSD;
+    log('🔴 OTO ÇIKIŞ: SL kırıldı! '+trade.displayName+' @ $'+fmtP(lp)+' | '+pnl.toFixed(2)+'$','dn');
+    notify('🔴 OTO ÇIKIŞ — SL!', trade.displayName+' zarar: $'+pnl.toFixed(2));
+    sndAlarm();
+    closePos(lp, pnl, 'SL');
+    return;
+  }
+
+  // 2. ANİ DÜŞÜŞ TESPİTİ — son fiyattan %1.5+ ani düşüş → SL sıkıştır
+  if(trade._lastPrice && trade._lastPrice > 0){
+    const dropPct = (trade._lastPrice - lp) / trade._lastPrice * 100;
+    if(dropPct >= 1.5 && (!trade._lastSLSqueeze || now - trade._lastSLSqueeze > 30000)){
+      trade._lastSLSqueeze = now;
+      const tighterSL = lp * (1 - (trade.trailPct * 0.3)/100);
+      if(tighterSL > trade.trailSL){
+        trade.trailSL = tighterSL;
+        log('⚡ ANİ DÜŞÜŞ (-%'+dropPct.toFixed(1)+'%) → SL sıkıştırıldı: $'+fmtP(tighterSL),'gold');
+        sndWarn();
+      }
+    }
+  }
+  trade._lastPrice = lp;
+
+  // 3. SL yaklaşıyor uyarısı
   const msgs=[];
-  if(lp<=trade.trailSL)     msgs.push('🔴 Trailing Stop kırıldı — çıkış önerilir!');
-  if(lp>=trade.targetTP)    msgs.push('💰 TP aşıldı — Yeni TP önerisi bekleniyor...');
   if(pct<=-1&&pct>-trade.trailPct) msgs.push('⚠️ Trailing stop yaklaşıyor ('+pct.toFixed(2)+'%)');
+  if(lp>=trade.targetTP)           msgs.push('💰 TP aşıldı — Yeni TP belirleniyor...');
   const ea=document.getElementById('exitAlert');
   if(ea){ if(msgs.length){ea.className='exit-alert on';ea.innerHTML=msgs.join('<br>');}else ea.className='exit-alert'; }
+
+  // 4. Grafiği güncelle
+  updateLiveChart(lp);
 }
 
 /* ── TRADE GİRİŞ/ÇIKIŞ ── */
@@ -850,6 +896,7 @@ window.enterTrade = function(idx){
   document.getElementById('tbl-sl').textContent='SL $'+initSL.toFixed(2);
   document.getElementById('tbl-tp').textContent='TP $'+(s.price*(1+tpPct/100)).toFixed(2);
 
+  resetChart();
   openWS(s.symbol);
   startEl();
   sndSignal();
@@ -928,6 +975,7 @@ function closePos(exitPrice,pnl,reason){
   if(elTimer){clearInterval(elTimer);elTimer=null;}
   if(upperTFTimer){clearInterval(upperTFTimer);upperTFTimer=null;}
   closeWS();
+  resetChart();
   document.getElementById('tradeBanner').className='trade-banner';
   save(); refreshBal(); renderSignals();
   if(pnl>=0) sndWin(); else sndLoss();
@@ -1961,6 +2009,126 @@ function renderPerf(){
 
 /* ── UTILS ── */
 function fmtV(v){ if(v>=1e9)return(v/1e9).toFixed(1)+'B'; if(v>=1e6)return(v/1e6).toFixed(1)+'M'; return(v/1e3).toFixed(0)+'K'; }
+
+/* ── CANLI GRAFİK ── */
+const chartData = { prices:[], times:[], maxLen:60 };
+
+function updateLiveChart(price){
+  if(!trade) return;
+  const now = Date.now();
+  chartData.prices.push(price);
+  chartData.times.push(now);
+  if(chartData.prices.length > chartData.maxLen){
+    chartData.prices.shift();
+    chartData.times.shift();
+  }
+  drawLiveChart();
+}
+
+function drawLiveChart(){
+  const wrap = document.getElementById('liveChartWrap');
+  const canvas = document.getElementById('liveChart');
+  if(!wrap||!canvas||!trade) return;
+  wrap.style.display = 'block';
+
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 320;
+  const H = 80;
+  canvas.width = W;
+  canvas.height = H;
+
+  const prices = chartData.prices;
+  if(prices.length < 2){ ctx.clearRect(0,0,W,H); return; }
+
+  const mn = Math.min(...prices, trade.trailSL, trade.entry);
+  const mx = Math.max(...prices, trade.targetTP, trade.entry);
+  const range = mx - mn || 0.0001;
+  const pad = 6;
+
+  const px = (p) => pad + (p - mn) / range * (W - pad*2);
+  const py = (p) => H - pad - (p - mn) / range * (H - pad*2);
+
+  ctx.clearRect(0,0,W,H);
+
+  // SL çizgisi
+  ctx.beginPath();
+  ctx.strokeStyle='rgba(239,68,68,0.5)';
+  ctx.lineWidth=1;
+  ctx.setLineDash([4,3]);
+  const slY = py(trade.trailSL);
+  ctx.moveTo(0,slY); ctx.lineTo(W,slY);
+  ctx.stroke();
+
+  // TP çizgisi
+  ctx.beginPath();
+  ctx.strokeStyle='rgba(34,197,94,0.5)';
+  ctx.setLineDash([4,3]);
+  const tpY = py(trade.targetTP);
+  ctx.moveTo(0,tpY); ctx.lineTo(W,tpY);
+  ctx.stroke();
+
+  // Giriş çizgisi
+  ctx.beginPath();
+  ctx.strokeStyle='rgba(59,130,246,0.4)';
+  ctx.setLineDash([2,4]);
+  const epY = py(trade.entry);
+  ctx.moveTo(0,epY); ctx.lineTo(W,epY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Fiyat gradyan dolgusu
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  const lastP = prices[prices.length-1];
+  const isUp = lastP >= trade.entry;
+  grad.addColorStop(0, isUp?'rgba(34,197,94,0.18)':'rgba(239,68,68,0.18)');
+  grad.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.moveTo(px(0), H);
+  prices.forEach((p,i)=>{ if(i===0) ctx.moveTo(px(i/(prices.length-1)*(W-pad*2)+pad), py(p)); else ctx.lineTo(px(i/(prices.length-1)*(W-pad*2)+pad), py(p)); });
+  ctx.lineTo(px((prices.length-1)/(prices.length-1)*(W-pad*2)+pad), H);
+  ctx.closePath();
+  ctx.fillStyle=grad;
+  ctx.fill();
+
+  // Ana fiyat çizgisi
+  ctx.beginPath();
+  ctx.strokeStyle= isUp?'#22C55E':'#EF4444';
+  ctx.lineWidth=2;
+  ctx.setLineDash([]);
+  prices.forEach((p,i)=>{
+    const x = pad + i/(prices.length-1)*(W-pad*2);
+    const y = py(p);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  // Son fiyat noktası
+  const lx = pad + (prices.length-1)/(prices.length-1)*(W-pad*2);
+  const ly = py(lastP);
+  ctx.beginPath();
+  ctx.arc(lx,ly,3,0,Math.PI*2);
+  ctx.fillStyle= isUp?'#22C55E':'#EF4444';
+  ctx.fill();
+}
+
+function resetChart(){
+  chartData.prices=[];
+  chartData.times=[];
+  const wrap=document.getElementById('liveChartWrap');
+  if(wrap) wrap.style.display='none';
+}
+
+/* ── PUSH BİLDİRİM ── */
+async function requestPush(){
+  if(!('Notification' in window)) return;
+  if(Notification.permission==='default'){
+    const p = await Notification.requestPermission();
+    if(p==='granted') log('🔔 Bildirimler açıldı','up');
+    else log('🔕 Bildirim izni verilmedi','gold');
+  }
+}
+// Sayfa açılınca sor
+setTimeout(requestPush, 2000);
 function fmtP(v){
   if(!v||isNaN(v)) return '—';
   if(v>=1000) return v.toFixed(2);
