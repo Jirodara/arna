@@ -713,25 +713,41 @@ function setLive(ok){
 }
 
 let alCD = {};
+let pricePoller = null;
+
 function openWS(sym){
-  if(ws){try{ws.close();}catch(e){} ws=null;}
+  // WebSocket yerine REST polling — daha güvenilir
+  closeWS();
   setLive(false);
+  pollPrice(sym);
+}
+
+function closeWS(){
+  if(ws){try{ws.close();}catch(e){} ws=null;}
+  if(pricePoller){clearInterval(pricePoller); pricePoller=null;}
+  setLive(false);
+}
+
+async function pollPrice(sym){
+  if(!trade || trade.symbol !== sym) return;
   try{
-    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${sym.toLowerCase()}@miniTicker`);
-    ws.onopen  = ()=>setLive(true);
-    ws.onmessage = ev=>{
-      try{
-        const d=JSON.parse(ev.data);
-        if(!trade||trade.symbol!==d.s) return;
-        trade.livePrice = parseFloat(d.c);
-        updateTrail(trade.livePrice);
+    const r = await fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol='+sym);
+    if(r.ok){
+      const d = await r.json();
+      const price = parseFloat(d.price);
+      if(price && trade && trade.symbol === sym){
+        trade.livePrice = price;
+        setLive(true);
+        updateTrail(price);
         updateTradePNL();
         checkExit();
-      }catch(e){}
-    };
-    ws.onerror  = ()=>setLive(false);
-    ws.onclose  = ()=>{ setLive(false); setTimeout(()=>{if(trade)openWS(trade.symbol);},4000); };
+      }
+    }
   }catch(e){ setLive(false); }
+  // 3 saniyede bir tekrar
+  if(trade && trade.symbol === sym){
+    pricePoller = setTimeout(()=>pollPrice(sym), 3000);
+  }
 }
 
 /* ── TRAILING STOP ── */
@@ -900,7 +916,7 @@ function closePos(exitPrice,pnl,reason){
   trade=null;
   if(elTimer){clearInterval(elTimer);elTimer=null;}
   if(upperTFTimer){clearInterval(upperTFTimer);upperTFTimer=null;}
-  setLive(false);
+  closeWS();
   document.getElementById('tradeBanner').className='trade-banner';
   save(); refreshBal(); renderSignals();
   if(pnl>=0) sndWin(); else sndLoss();
