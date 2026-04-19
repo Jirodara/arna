@@ -569,6 +569,15 @@ let signals = [], trade = null, ws = null;
 let elTimer = null, elSec = 0;
 let acx = null, sndOk = false;
 
+// Kara liste — elenen coinler 30dk boyunca tekrar taranmaz
+const blacklist = new Map();
+function cleanBlacklist(){
+  const now = Date.now();
+  for(const [sym, ts] of blacklist){
+    if(now - ts > 1800000) blacklist.delete(sym); // 30dk
+  }
+}
+
 /* DEMO */
 let demoBal  = DEMO;
 let demoPnL  = 0;
@@ -1068,10 +1077,9 @@ function isPeakRecovery(klines, price, high24h){
   // Şu an son zirveden ne kadar uzak?
   const dropFromRecent = (recentHigh - price) / recentHigh * 100;
   
-  // %4'ten fazla düşmüş ve toparlanmaya çalışıyorsa — sahte toparlanma riski
-  // RONIN: 0.1088'den 0.1015'e = %6.7 düşüş → elensin
-  // LISTA: %15 düşüş → kesinlikle elensin
-  if(dropFromHigh > 4 && dropFromRecent > 2){
+  // %10'dan fazla düşmüş ve son zirveden %5+ uzaksa — sahte toparlanma
+  // Eşiği gevşettik: %4→%10, %2→%5
+  if(dropFromHigh > 10 && dropFromRecent > 5){
     return {
       isPeak: true,
       dropFromHigh: dropFromHigh.toFixed(1),
@@ -1488,9 +1496,10 @@ async function startScan(){
   const minSc = parseInt(document.getElementById('p-score').value)||70;
   const tf    = document.getElementById('p-tf').value||'1h';
 
+  cleanBlacklist(); // Süresi dolan kara liste kayıtlarını temizle
   setP(0,'Binance USDT piyasası taranıyor...');
   stepRun('s1');
-  log('Tarama başladı — Binance USDT | '+tf+' | +'+minC+'–'+maxC+'%','blue');
+  log('Tarama başladı — Binance USDT | '+tf+' | +'+minC+'–'+maxC+'% | Kara liste: '+blacklist.size,'blue');
 
   try{
     log('Binance baglantisi kuruluyor...','blue');
@@ -1552,18 +1561,24 @@ async function startScan(){
         const bol = bollFilt(closes,price);
         const vol = volFilt(klines);
 
-        // ★ ZİRVE KONTROLÜ — EN ÖNCE YAP
-        // LISTA, COMP gibi: zirveyi görmüş, düşmüş, şimdi toparlanıyor = sahte
+        // ★ KARA LİSTE — Son 30dk elenen coinleri atla (log'a yazmadan)
+        if(blacklist.has(sym)){
+          continue;
+        }
+
+        // ★ ZİRVE KONTROLÜ
         const peakCheck = isPeakRecovery(klines, price, high24h);
         if(peakCheck.isPeak){
-          log('🚫 '+sym.replace('USDT','')+' atlandı — '+peakCheck.note,'gold');
+          blacklist.set(sym, Date.now());
+          log('🚫 '+sym.replace('USDT','')+' — '+peakCheck.note,'gold');
           continue;
         }
 
         // ★ FİTİL TESPİTİ
         const fakeWick = hasFakeWick(klines, 5);
         if(fakeWick){
-          log('🚫 '+sym.replace('USDT','')+' atlandı — uzun fitil tespit edildi','gold');
+          blacklist.set(sym, Date.now());
+          log('🚫 '+sym.replace('USDT','')+' — uzun fitil','gold');
           continue;
         }
 
