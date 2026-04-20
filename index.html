@@ -1641,20 +1641,24 @@ async function startScan(){
         // Öğrenme sistemi ağırlıklarını uygula
         let adjSc = applyLearning(sc, tr, rsiR, bol, vol);
 
-        // ★ MUM KAPANIŞI KONTROLÜ
-        // Mumun ortasında değil, kapanışına yakın veya yeni açılmışsa sinyal ver
-        const tfMs = {'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000};
-        const candleMs = tfMs[tf] || 3600000;
+        // ★ MUM KAPANIŞI KONTROLÜ — Binance kline verisiyle
+        // kd[son-1] kapanmış mum, kd[son] açık mum
+        // Kapanmış mumun close_time'ına bakarak ne kadar önce kapandığını hesapla
+        const lastClosedCandle = kd[kd.length-2]; // Son kapanmış mum
+        const openCandle = kd[kd.length-1];       // Şu an açık mum
+        const candleOpenTime = openCandle[0];     // Açık mumun başlangıç zamanı
+        const candleCloseTime = openCandle[6];    // Açık mumun tahmini kapanış zamanı
         const now_ms = Date.now();
-        const elapsed = now_ms % candleMs;       // Bu mumda geçen süre
-        const remaining = candleMs - elapsed;    // Kapanmaya kalan süre
-        const elapsedPct = elapsed / candleMs;   // 0-1 arası
-        // Geçerli: Son %20 (kapanmak üzere) VEYA ilk %10 (yeni açıldı)
-        const candleOk = elapsedPct >= 0.80 || elapsedPct <= 0.10;
+        const candleDuration = candleCloseTime - candleOpenTime;
+        const elapsed = now_ms - candleOpenTime;
+        const elapsedPct = elapsed / candleDuration;
+        const remaining = candleCloseTime - now_ms;
+        // Geçerli: Son %25 (kapanmak üzere) VEYA ilk %15 (yeni açıldı)
+        const candleOk = elapsedPct >= 0.75 || elapsedPct <= 0.15;
         if(!candleOk){
-          // Mum ortasında — sinyal güvenilmez, atla
           const kalan = Math.round(remaining/60000);
-          log('⏳ '+sym.replace('USDT','').substring(0,6)+' — mum ortası ('+kalan+'dk kaldı)','gold');
+          const kalanTxt = kalan > 0 ? kalan+'dk kaldı' : 'kapandı';
+          log('⏳ '+sym.replace('USDT','').substring(0,6)+' — mum ortası ('+kalanTxt+')','gold');
           continue;
         }
 
