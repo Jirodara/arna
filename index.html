@@ -830,7 +830,7 @@ function updateTradePNL(){
   }
   if(lp>=trade.targetTP&&(!alCD.tp||now-alCD.tp>60000)){
     alCD.tp=now; sndWin();
-    const yeniTP=(trade.targetTP*1.012).toFixed(4); // %1.2 yukarı — daha makul
+    const yeniTP=(trade.targetTP*1.008).toFixed(4); // %0.8 yukarı
     notify('💰 TP AŞİLDİ!',trade.displayName+' +'+pnl.toFixed(2)+'$ — Yeni TP önerisi: $'+yeniTP);
     showTPOffer(lp,pnl,parseFloat(yeniTP));
   }
@@ -886,7 +886,7 @@ window.enterTrade = function(idx){
   const s = signals[idx]; if(!s) return;
   const posUSD   = Math.min(parseFloat(document.getElementById('p-pos').value)||400, demoBal);
   const trailPct = parseFloat(document.getElementById('p-trail').value)||1.5;
-  const tpPct    = s.score>=85?5 : s.score>=75?3.5 : 2.5;
+  const tpPct    = s.score>=85?2.5 : s.score>=75?1.8 : 1.2;
   // SL = trailing % ile hesapla, ama swing low daha yakınsa onu kullan
   // Swing low çok uzaksa (>%3) trailing %'yi kullan
   const trailSL   = s.price*(1-trailPct/100);
@@ -1246,7 +1246,7 @@ function totalScore(tr,rsi,bol,vol,chg){
 
 /* TP hesapla */
 function calcTP(price,score){
-  const pct = score>=85?5 : score>=75?3.5 : 2.5;
+  const pct = score>=85?2.5 : score>=75?1.8 : 1.2;
   return{tp:price*(1+pct/100), pct};
 }
 
@@ -1375,7 +1375,7 @@ async function checkUpperTFs(){
   } else if(bothStrong && pnlPct > 0){
     // Her iki TF güçlü + karda → TP yükselt
     trade.lastUpperAction = now;
-    const newTP = trade.targetTP * 1.012; // %1.2 yukarı
+    const newTP = trade.targetTP * 1.008; // %0.8 yukarı — daha yakın
     applyUpperTFDecision('strong', tf1, tf2, pnl, newTP);
   }
 }
