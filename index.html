@@ -2266,17 +2266,11 @@ setTimeout(requestPush, 2000);
 function fmtP(v){
   if(v===null||v===undefined||isNaN(v)) return '—';
   if(v===0) return '0';
-  if(v>=1000)      return v.toFixed(2);
-  if(v>=1)         return v.toFixed(4);
-  if(v>=0.1)       return v.toFixed(5);
-  if(v>=0.01)      return v.toFixed(6);
-  if(v>=0.001)     return v.toFixed(7);
-  if(v>=0.0001)    return v.toFixed(8);
-  if(v>=0.00001)   return v.toFixed(9);
-  if(v>=0.000001)  return v.toFixed(10);
-  // Çok küçük sayılar için anlamlı basamak göster
-  const s = v.toPrecision(6);
-  return parseFloat(s).toString();
+  // Her zaman en az 4 anlamlı basamak göster
+  if(v>=1000)   return v.toFixed(2);
+  if(v>=1)      return v.toFixed(4);
+  // Küçük sayılar için toPrecision kullan - her zaman doğru basamak
+  return v.toPrecision(5).replace(/\.?0+$/, '');
 }
 function notify(t,b){ if(typeof Notification!=='undefined'&&Notification.permission==='granted') try{new Notification(t,{body:b,icon:'./icon.svg'});}catch(e){} }
 if(typeof Notification!=='undefined'&&Notification.permission==='default') Notification.requestPermission();
