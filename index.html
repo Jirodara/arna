@@ -429,6 +429,8 @@ body{
         <div class="p-group">
           <label>Zaman Dilimi</label>
           <select id="p-tf">
+            <option value="1m">1 Dakika</option>
+            <option value="3m">3 Dakika</option>
             <option value="5m">5 Dakika</option>
             <option value="15m">15 Dakika</option>
             <option value="1h" selected>1 Saat</option>
@@ -1270,6 +1272,8 @@ function calcTP(price,score){
 // Bir TF'nin üstündeki iki TF'yi döner
 function upperTFs(tf){
   const map = {
+    '1m':  ['5m', '15m'],
+    '3m':  ['15m','1h'],
     '5m':  ['15m','1h'],
     '15m': ['1h', '4h'],
     '1h':  ['4h', '1d'],
@@ -1602,7 +1606,7 @@ async function startScan(){
 
         // ★ ÜST TF TREND FİLTRESİ — genel trend aşağıysa alma
         // Seçilen TF'nin bir üstüne bak
-        const upperTFMap = {'5m':'15m','15m':'1h','1h':'4h','4h':'1d'};
+        const upperTFMap = {'1m':'5m','3m':'15m','5m':'15m','15m':'1h','1h':'4h','4h':'1d'};
         const upperTF = upperTFMap[tf];
         if(upperTF){
           try{
@@ -1613,8 +1617,11 @@ async function startScan(){
                 const uCloses = uKd.map(k=>+k[4]);
                 const uTr = trendFilt(uCloses);
                 if(!uTr.pass){
+                  // Hem USDT hem TRY versiyonunu kara listeye al
                   blacklist.set(sym, Date.now());
-                  log('🚫 '+sym.replace('USDT','').substring(0,6)+' — üst TF ('+upperTF+') trend aşağı','gold');
+                  const baseName = sym.replace('USDT','');
+                  blacklist.set(baseName+'TRY', Date.now());
+                  log('🚫 '+baseName.substring(0,6)+' — üst TF ('+upperTF+') trend aşağı','gold');
                   continue;
                 }
               }
