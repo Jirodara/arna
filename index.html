@@ -1565,7 +1565,8 @@ async function startScan(){
       }
     }
 
-    log('Filtre 1: '+cands.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
+    const cands2 = cands; // İkisi de taransın, sonunda skor bazlı seçilecek
+    log('Filtre 1: '+cands2.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
     if(!cands.length){ 
       log('⚠️ Bu aralıkta ('+minC+'%–'+maxC+'%) coin yok şu an. Min/Max yükseliş değerlerini değiştirip tekrar deneyin.','gold'); 
       signals=[]; 
@@ -1575,7 +1576,7 @@ async function startScan(){
 
     setP(20,'Katmanlı analiz başlıyor...');
     const results=[];
-    const lim=Math.min(cands.length,30);
+    const lim=Math.min(cands2.length,30);
 
     for(let i=0;i<lim;i++){
       let t=cands[i]; let sym=t.symbol;
@@ -1598,6 +1599,28 @@ async function startScan(){
         let rsiR= rsiFilt(closes);
         let bol = bollFilt(closes,price);
         let vol = volFilt(klines);
+
+        // ★ ÜST TF TREND FİLTRESİ — genel trend aşağıysa alma
+        // Seçilen TF'nin bir üstüne bak
+        const upperTFMap = {'5m':'15m','15m':'1h','1h':'4h','4h':'1d'};
+        const upperTF = upperTFMap[tf];
+        if(upperTF){
+          try{
+            const uRes = await apiFetch('/klines?symbol='+sym+'&interval='+upperTF+'&limit=35');
+            if(uRes.ok){
+              const uKd = await uRes.json();
+              if(Array.isArray(uKd) && uKd.length >= 30){
+                const uCloses = uKd.map(k=>+k[4]);
+                const uTr = trendFilt(uCloses);
+                if(!uTr.pass){
+                  blacklist.set(sym, Date.now());
+                  log('🚫 '+sym.replace('USDT','').substring(0,6)+' — üst TF ('+upperTF+') trend aşağı','gold');
+                  continue;
+                }
+              }
+            }
+          }catch(e){ /* üst TF alınamazsa devam et */ }
+        }
 
         // ★ KARA LİSTE — Son 30dk elenen coinleri atla (log'a yazmadan)
         if(blacklist.has(sym)){
@@ -1641,8 +1664,9 @@ async function startScan(){
         // Öğrenme sistemi ağırlıklarını uygula
         let adjSc = applyLearning(sc, tr, rsiR, bol, vol);
 
-        // ★ MUM KAPANIŞI KONTROLÜ — sadece 4h ve 1d için
-        if(tf === '4h' || tf === '1d'){
+        // ★ MUM KAPANIŞI KONTROLÜ
+        // 1h: son %30 veya ilk %20 | 4h/1d: son %25 veya ilk %15
+        if(tf === '1h' || tf === '4h' || tf === '1d'){
           const openCandle = kd[kd.length-1];
           const candleOpenTime = openCandle[0];
           const candleCloseTime = openCandle[6];
@@ -1651,7 +1675,10 @@ async function startScan(){
           const elapsed = now_ms - candleOpenTime;
           const elapsedPct = elapsed / candleDuration;
           const remaining = candleCloseTime - now_ms;
-          const candleOk = elapsedPct >= 0.75 || elapsedPct <= 0.15;
+          // 1h için daha geniş pencere
+          const minPct = tf==='1h' ? 0.70 : 0.75;
+          const maxPct = tf==='1h' ? 0.20 : 0.15;
+          const candleOk = elapsedPct >= minPct || elapsedPct <= maxPct;
           if(!candleOk){
             const kalan = Math.round(remaining/60000);
             log('⏳ '+sym.replace('USDT','').substring(0,6)+' — mum ortası ('+kalan+'dk kaldı)','gold');
@@ -1678,18 +1705,35 @@ async function startScan(){
     stepDone('s2');stepDone('s3');stepDone('s4');stepDone('s5');
     stepRun('s6'); setP(90,'Sinyaller sıralanıyor...');
 
-    results.sort((a,b)=>b.score-a.score);
+    // Aynı coinin USDT ve TRY versiyonu varsa en yüksek skorluyu seç
+    const bestByBase = new Map();
+    for(const r of results){
+      const base = r.displayName;
+      if(!bestByBase.has(base)){
+        bestByBase.set(base, r);
+      } else {
+        const existing = bestByBase.get(base);
+        // Önce skor, eşitse hacim
+        if(r.score > existing.score || 
+          (r.score === existing.score && r.volume > existing.volume)){
+          bestByBase.set(base, r);
+        }
+      }
+    }
+    const dedupResults = Array.from(bestByBase.values());
+    dedupResults.sort((a,b)=>b.score-a.score);
     // Geçmişte zararlı kapanan coinleri filtrele
     const badCoins = new Set(
       history.filter(h=>h.result==='lose'&&h.exitReason==='SL'&&(Date.now()-h.exitTime)<3600000)
              .map(h=>h.symbol)
     );
+    let finalResults = dedupResults;
     if(badCoins.size>0){
-      const before=results.length;
-      results=results.filter(r=>!badCoins.has(r.symbol));
-      if(before>results.length) log('🚫 Son 1 saatte SL ile kapanan '+(before-results.length)+' coin filtrelendi','gold');
+      const before=finalResults.length;
+      finalResults=finalResults.filter(r=>!badCoins.has(r.symbol));
+      if(before>finalResults.length) log('🚫 Son 1 saatte SL ile kapanan '+(before-finalResults.length)+' coin filtrelendi','gold');
     }
-    signals=results;
+    signals=finalResults;
     stepDone('s6'); setP(100,'✓ Tamamlandı');
 
     const buyN=signals.filter(s=>s.verdict==='BUY').length;
