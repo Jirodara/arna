@@ -1529,35 +1529,41 @@ async function startScan(){
     }catch(e){}
     log('💱 USD/TRY kuru: '+usdTry.toFixed(2),'blue');
 
-    const cands = all.filter(t=>{
-      const isUSDT = t.symbol.endsWith('USDT');
-      const isTRY  = t.symbol.endsWith('TRY');
-      if(!isUSDT && !isTRY) return false;
-      if(SKIP.has(t.symbol)) return false;
-      // TRY çiftlerinde hacim TRY cinsinden — USDT'ye çevir
-      const volUSD = isTRY ? +t.quoteVolume/usdTry : +t.quoteVolume;
-      if(volUSD < 2000000) return false; // Min $2M
-      if(+t.count < 5000) return false;
-      // TRY fiyatını USD'ye çevir
-      const priceUSD = isTRY ? +t.lastPrice/usdTry : +t.lastPrice;
-      // Fiyat buyuklugune gore eleme yok — kucuk fiyatli coinler de katilabilir
-      const c = +t.priceChangePercent;
-      return c>=minC && c<=maxC;
-    }).map(ticker=>{
-      // TRY çiftlerinde fiyatı USD'ye normalize et
-      if(ticker.symbol.endsWith('TRY')){
-        return {
-          ...ticker,
-          _originalSymbol: ticker.symbol,
-          symbol: ticker.symbol.replace('TRY','USDT'),
-          lastPrice: (+ticker.lastPrice/usdTry).toString(),
-          quoteVolume: (+ticker.quoteVolume/usdTry).toString(),
-          highPrice: (+ticker.highPrice/usdTry).toString(),
+    const cands = [];
+    for(const raw of all){
+      const isUSDT = raw.symbol.endsWith('USDT');
+      const isTRY  = raw.symbol.endsWith('TRY');
+      if(!isUSDT && !isTRY) continue;
+      if(SKIP.has(raw.symbol)) continue;
+      const volUSD = isTRY ? +raw.quoteVolume/usdTry : +raw.quoteVolume;
+      if(volUSD < 2000000) continue;
+      if(+raw.count < 5000) continue;
+      const priceUSD = isTRY ? +raw.lastPrice/usdTry : +raw.lastPrice;
+      const c = +raw.priceChangePercent;
+      if(c<minC || c>maxC) continue;
+      // Yeni düz obje yarat — const sorunu yok
+      if(isTRY){
+        cands.push({
+          symbol: raw.symbol.replace('TRY','USDT'),
+          _originalSymbol: raw.symbol,
+          lastPrice: (priceUSD).toString(),
+          highPrice: (+raw.highPrice/usdTry).toString(),
+          quoteVolume: (volUSD).toString(),
+          priceChangePercent: raw.priceChangePercent,
+          count: raw.count,
           _isTRY: true
-        };
+        });
+      } else {
+        cands.push({
+          symbol: raw.symbol,
+          lastPrice: raw.lastPrice,
+          highPrice: raw.highPrice,
+          quoteVolume: raw.quoteVolume,
+          priceChangePercent: raw.priceChangePercent,
+          count: raw.count
+        });
       }
-      return {...ticker};
-    });
+    }
 
     log('Filtre 1: '+cands.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
     if(!cands.length){ 
