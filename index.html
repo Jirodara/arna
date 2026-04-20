@@ -413,7 +413,15 @@ body{
     <!-- Tarama paneli -->
     <div class="scan-panel">
       <div class="panel-title">Parametreler</div>
-      <div class="params">
+      <!-- Yüzdelik filtre toggle -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:8px 10px;background:var(--ink2);border-radius:8px;border:1px solid var(--line)">
+        <div>
+          <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">Yüzdelik Filtre</div>
+          <div style="font-size:10px;color:var(--dim);margin-top:2px" id="pctFilterDesc">Min/Max yükseliş aktif</div>
+        </div>
+        <button id="btnPctFilter" onclick="togglePctFilter()" style="padding:5px 12px;border-radius:6px;border:1px solid rgba(240,180,41,.4);background:rgba(240,180,41,.1);color:var(--gold);font-size:11px;font-weight:600;cursor:pointer">AÇIK</button>
+      </div>
+      <div class="params" id="pctFilterFields">
         <div class="p-group">
           <label>Min Yükseliş %</label>
           <input type="number" id="p-min" value="3" step="0.5" min="1" max="15">
@@ -567,6 +575,7 @@ const DEMO = 2000;
 
 /* STATE */
 let scanning = false, autoOn = false, autoTimer = null;
+let pctFilterOn = true; // Yüzdelik filtre varsayılan açık
 let signals = [], trade = null, ws = null;
 let elTimer = null, elSec = 0;
 let acx = null, sndOk = false;
@@ -1544,7 +1553,8 @@ async function startScan(){
       if(+raw.count < 5000) continue;
       const priceUSD = isTRY ? +raw.lastPrice/usdTry : +raw.lastPrice;
       const c = +raw.priceChangePercent;
-      if(c<minC || c>maxC) continue;
+      // Yüzdelik filtre açıksa kontrol et — kapalıysa tüm coinler geçer
+      if(pctFilterOn && (c<minC || c>maxC)) continue;
       // Yeni düz obje yarat — const sorunu yok
       if(isTRY){
         cands.push({
@@ -1606,7 +1616,7 @@ async function startScan(){
 
         // ★ ÜST TF TREND FİLTRESİ — genel trend aşağıysa alma
         // Seçilen TF'nin bir üstüne bak
-        const upperTFMap = {'1m':'5m','3m':'15m','5m':'15m','15m':'1h','1h':'4h','4h':'1d'};
+        const upperTFMap = {'3m':'15m','5m':'1h','15m':'4h','1h':'4h','4h':'1d'};
         const upperTF = upperTFMap[tf];
         if(upperTF){
           try{
@@ -1617,11 +1627,12 @@ async function startScan(){
                 const uCloses = uKd.map(k=>+k[4]);
                 const uTr = trendFilt(uCloses);
                 if(!uTr.pass){
-                  // Hem USDT hem TRY versiyonunu kara listeye al
-                  blacklist.set(sym, Date.now());
+                  // USDT ve TRY versiyonlarını kara listeye al
                   const baseName = sym.replace('USDT','');
+                  blacklist.set(baseName+'USDT', Date.now());
                   blacklist.set(baseName+'TRY', Date.now());
-                  log('🚫 '+baseName.substring(0,6)+' — üst TF ('+upperTF+') trend aşağı','gold');
+                  blacklist.set(sym, Date.now());
+                  log('🚫 '+baseName.substring(0,6)+' — üst TF ('+upperTF+') aşağı','gold');
                   continue;
                 }
               }
@@ -1775,6 +1786,26 @@ async function startScan(){
 
 let autoScanOn = false, autoTradeOn = false;
 let autoScanTimer = null;
+
+function togglePctFilter(){
+  pctFilterOn = !pctFilterOn;
+  const btn = document.getElementById('btnPctFilter');
+  const fields = document.getElementById('pctFilterFields');
+  const desc = document.getElementById('pctFilterDesc');
+  if(pctFilterOn){
+    btn.textContent = 'AÇIK';
+    btn.style.borderColor = 'rgba(240,180,41,.4)';
+    btn.style.color = 'var(--gold)';
+    fields.style.display = 'grid';
+    desc.textContent = 'Min/Max yükseliş aktif';
+  } else {
+    btn.textContent = 'KAPALI';
+    btn.style.borderColor = 'rgba(100,116,139,.4)';
+    btn.style.color = 'var(--muted)';
+    fields.style.display = 'none';
+    desc.textContent = 'Tüm coinler taranıyor';
+  }
+}
 
 function toggleAutoScan(){
   autoScanOn = !autoScanOn;
