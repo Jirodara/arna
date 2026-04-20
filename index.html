@@ -574,7 +574,7 @@ const blacklist = new Map();
 function cleanBlacklist(){
   const now = Date.now();
   for(const [sym, ts] of blacklist){
-    if(now - ts > 1800000) blacklist.delete(sym); // 30dk
+    if(now - ts > 600000) blacklist.delete(sym); // 10dk
   }
 }
 
@@ -1546,15 +1546,17 @@ async function startScan(){
     }).map(ticker=>{
       // TRY çiftlerinde fiyatı USD'ye normalize et
       if(ticker.symbol.endsWith('TRY')){
-        const normalized = Object.assign({}, ticker);
-        normalized._originalSymbol = ticker.symbol;
-        normalized.symbol = ticker.symbol.replace('TRY','USDT');
-        normalized.lastPrice = (+ticker.lastPrice/usdTry).toString();
-        normalized.quoteVolume = (+ticker.quoteVolume/usdTry).toString();
-        normalized._isTRY = true;
-        return normalized;
+        return {
+          ...ticker,
+          _originalSymbol: ticker.symbol,
+          symbol: ticker.symbol.replace('TRY','USDT'),
+          lastPrice: (+ticker.lastPrice/usdTry).toString(),
+          quoteVolume: (+ticker.quoteVolume/usdTry).toString(),
+          highPrice: (+ticker.highPrice/usdTry).toString(),
+          _isTRY: true
+        };
       }
-      return ticker;
+      return {...ticker};
     });
 
     log('Filtre 1: '+cands.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
@@ -1600,7 +1602,7 @@ async function startScan(){
         const peakCheck = isPeakRecovery(klines, price, high24h);
         if(peakCheck.isPeak){
           blacklist.set(sym, Date.now());
-          log('🚫 '+sym.replace('USDT','')+' — '+peakCheck.note,'gold');
+          log('🚫 '+sym.replace('USDT','').substring(0,6)+' — zirve','gold');
           continue;
         }
 
@@ -1608,21 +1610,21 @@ async function startScan(){
         const fakeWick = hasFakeWick(klines, 5);
         if(fakeWick){
           blacklist.set(sym, Date.now());
-          log('🚫 '+sym.replace('USDT','')+' — uzun fitil','gold');
+          log('🚫 '+sym.replace('USDT','').substring(0,6)+' — fitil','gold');
           continue;
         }
 
-        // ★ HACİM — Kırmızı çizgi ama çok katı olmasın
-        // Hacim yoksa devam et ama skor düşük kalır (vol.pass=false → +0 puan)
+        // ★ HACİM
         if(!vol.pass && vol.ratio < 0.5){
-          // Hacim çok çok düşükse (normalin yarısından az) atla
-          log('🚫 '+sym.replace('USDT','')+' atlandı — '+vol.note,'gold');
+          blacklist.set(sym, Date.now());
+          log('🚫 '+sym.replace('USDT','')+' — hacimsiz','gold');
           continue;
         }
 
-        // ★ RSI — <35 ise momentum kesinlikle yok, atla; 35-45 arası sadece skor düşür
+        // ★ RSI
         if(rsiR.rsi < 35){
-          log('🚫 '+sym.replace('USDT','')+' atlandı — '+rsiR.note,'gold');
+          blacklist.set(sym, Date.now());
+          log('🚫 '+sym.replace('USDT','').substring(0,6)+' — RSI düşük ('+rsiR.rsi.toFixed(0)+')','gold');
           continue;
         }
 
