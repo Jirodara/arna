@@ -534,7 +534,7 @@ const API_ENDPOINTS = [
 let API = API_ENDPOINTS[0];
 let _apiIdx = 0;
 
-async function apiFetch(path){
+async function apiFetch(path, _timeout){
   const errors = [];
   for(let attempt=0; attempt<API_ENDPOINTS.length; attempt++){
     const base = API_ENDPOINTS[(_apiIdx + attempt) % API_ENDPOINTS.length];
@@ -1282,7 +1282,7 @@ function upperTFs(tf){
 async function analyzeTF(sym, tf){
   if(!tf) return null;
   try{
-    const r = await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=40', 8000);
+    const r = await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=40');
     if(!r.ok) return null;
     const kd = await r.json();
     if(!Array.isArray(kd)||kd.length<15) return null;
@@ -1578,26 +1578,26 @@ async function startScan(){
     const lim=Math.min(cands.length,30);
 
     for(let i=0;i<lim;i++){
-      const t=cands[i]; const sym=t.symbol;
-      const pct=20+Math.round((i/lim)*65);
+      let t=cands[i]; let sym=t.symbol;
+      let pct=20+Math.round((i/lim)*65);
       setP(pct,sym.replace('USDT','')+' analiz ediliyor... ('+(i+1)+'/'+lim+')');
 
       try{
-        const kr=await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=62', 9000);
+        let kr=await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=62');
         if(!kr.ok) continue;
-        const kd=await kr.json();
+        let kd=await kr.json();
         if(!Array.isArray(kd)||kd.length<32) continue;
 
-        const klines = kd.map(k=>({o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
-        const closes = klines.map(k=>k.c);
-        const price  = parseFloat(t.lastPrice);
-        const change = parseFloat(t.priceChangePercent);
-        const high24h= parseFloat(t.highPrice); // 24s yüksek
+        let klines = kd.map(k=>({o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+        let closes = klines.map(k=>k.c);
+        let price  = parseFloat(t.lastPrice);
+        let change = parseFloat(t.priceChangePercent);
+        let high24h= parseFloat(t.highPrice); // 24s yüksek
 
-        const tr  = trendFilt(closes);
-        const rsiR= rsiFilt(closes);
-        const bol = bollFilt(closes,price);
-        const vol = volFilt(klines);
+        let tr  = trendFilt(closes);
+        let rsiR= rsiFilt(closes);
+        let bol = bollFilt(closes,price);
+        let vol = volFilt(klines);
 
         // ★ KARA LİSTE — Son 30dk elenen coinleri atla (log'a yazmadan)
         if(blacklist.has(sym)){
@@ -1605,7 +1605,7 @@ async function startScan(){
         }
 
         // ★ ZİRVE KONTROLÜ
-        const peakCheck = isPeakRecovery(klines, price, high24h);
+        let peakCheck = isPeakRecovery(klines, price, high24h);
         if(peakCheck.isPeak){
           blacklist.set(sym, Date.now());
           log('🚫 '+sym.replace('USDT','').substring(0,6)+' — zirve','gold');
@@ -1613,7 +1613,7 @@ async function startScan(){
         }
 
         // ★ FİTİL TESPİTİ
-        const fakeWick = hasFakeWick(klines, 5);
+        let fakeWick = hasFakeWick(klines, 5);
         if(fakeWick){
           blacklist.set(sym, Date.now());
           log('🚫 '+sym.replace('USDT','').substring(0,6)+' — fitil','gold');
@@ -1634,15 +1634,15 @@ async function startScan(){
           continue;
         }
 
-        const sc  = totalScore(tr,rsiR,bol,vol,change);
-        const sl  = swingLow(klines,10);
-        const tp  = calcTP(price,sc);
+        let sc  = totalScore(tr,rsiR,bol,vol,change);
+        let sl  = swingLow(klines,10);
+        let tp  = calcTP(price,sc);
 
         // Öğrenme sistemi ağırlıklarını uygula
-        const adjSc = applyLearning(sc, tr, rsiR, bol, vol);
+        let adjSc = applyLearning(sc, tr, rsiR, bol, vol);
 
         if(adjSc>=minSc){
-          const rsi = rsiR;
+          let rsi = rsiR;
           results.push({
             symbol:sym, displayName:sym.replace('USDT',''),
             price, change, volume:parseFloat(t.quoteVolume),
