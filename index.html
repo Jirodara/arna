@@ -1641,25 +1641,22 @@ async function startScan(){
         // Öğrenme sistemi ağırlıklarını uygula
         let adjSc = applyLearning(sc, tr, rsiR, bol, vol);
 
-        // ★ MUM KAPANIŞI KONTROLÜ — Binance kline verisiyle
-        // kd[son-1] kapanmış mum, kd[son] açık mum
-        // Kapanmış mumun close_time'ına bakarak ne kadar önce kapandığını hesapla
-        const lastClosedCandle = kd[kd.length-2]; // Son kapanmış mum
-        const openCandle = kd[kd.length-1];       // Şu an açık mum
-        const candleOpenTime = openCandle[0];     // Açık mumun başlangıç zamanı
-        const candleCloseTime = openCandle[6];    // Açık mumun tahmini kapanış zamanı
-        const now_ms = Date.now();
-        const candleDuration = candleCloseTime - candleOpenTime;
-        const elapsed = now_ms - candleOpenTime;
-        const elapsedPct = elapsed / candleDuration;
-        const remaining = candleCloseTime - now_ms;
-        // Geçerli: Son %25 (kapanmak üzere) VEYA ilk %15 (yeni açıldı)
-        const candleOk = elapsedPct >= 0.75 || elapsedPct <= 0.15;
-        if(!candleOk){
-          const kalan = Math.round(remaining/60000);
-          const kalanTxt = kalan > 0 ? kalan+'dk kaldı' : 'kapandı';
-          log('⏳ '+sym.replace('USDT','').substring(0,6)+' — mum ortası ('+kalanTxt+')','gold');
-          continue;
+        // ★ MUM KAPANIŞI KONTROLÜ — sadece 4h ve 1d için
+        if(tf === '4h' || tf === '1d'){
+          const openCandle = kd[kd.length-1];
+          const candleOpenTime = openCandle[0];
+          const candleCloseTime = openCandle[6];
+          const now_ms = Date.now();
+          const candleDuration = candleCloseTime - candleOpenTime;
+          const elapsed = now_ms - candleOpenTime;
+          const elapsedPct = elapsed / candleDuration;
+          const remaining = candleCloseTime - now_ms;
+          const candleOk = elapsedPct >= 0.75 || elapsedPct <= 0.15;
+          if(!candleOk){
+            const kalan = Math.round(remaining/60000);
+            log('⏳ '+sym.replace('USDT','').substring(0,6)+' — mum ortası ('+kalan+'dk kaldı)','gold');
+            continue;
+          }
         }
 
         if(adjSc>=minSc){
