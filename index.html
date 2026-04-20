@@ -1569,7 +1569,8 @@ async function startScan(){
   cleanBlacklist(); // Süresi dolan kara liste kayıtlarını temizle
   setP(0,'Binance USDT piyasası taranıyor...');
   stepRun('s1');
-  log('Tarama başladı — Binance USDT | '+tf+' | +'+minC+'–'+maxC+'% | Kara liste: '+blacklist.size,'blue');
+  const filterInfo = pctFilterOn ? '+'+minC+'–'+maxC+'%' : 'tüm coinler';
+  log('Tarama başladı — Binance USDT | '+tf+' | '+filterInfo+' | Kara liste: '+blacklist.size,'blue');
 
   try{
     log('Binance baglantisi kuruluyor...','blue');
@@ -1635,7 +1636,7 @@ async function startScan(){
     }
 
     const cands2 = cands; // İkisi de taransın, sonunda skor bazlı seçilecek
-    log('Filtre 1: '+cands2.length+' coin '+minC+'%–'+maxC+'% arasında','blue');
+    log('Filtre 1: '+cands2.length+' coin '+(pctFilterOn ? minC+'%–'+maxC+'% arasında' : 'tüm piyasa'),'blue');
     if(!cands.length){ 
       log('⚠️ Bu aralıkta ('+minC+'%–'+maxC+'%) coin yok şu an. Min/Max yükseliş değerlerini değiştirip tekrar deneyin.','gold'); 
       signals=[]; 
@@ -1682,8 +1683,10 @@ async function startScan(){
                 const uCloses = uKd.map(k=>+k[4]);
                 const uTr = trendFilt(uCloses);
                 const uRsi = calcRSI(uCloses, 14);
-                // Üst TF: trend yukarı VE RSI aşırı alımda değil
-                if(!uTr.pass || uRsi > 78){
+                // Üst TF: sadece hem trend hem MACD aşağıysa ele
+                // RSI <35 ise dip fırsatı olabilir - eleme
+                const hardDown = !uTr.pass && uTr.macdLine < uTr.macdSig && uRsi < 45 && uRsi > 35;
+                if(hardDown){
                   // USDT ve TRY versiyonlarını kara listeye al
                   const baseName = sym.replace('USDT','');
                   blacklist.set(baseName+'USDT', Date.now());
