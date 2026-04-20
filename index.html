@@ -585,7 +585,13 @@ const blacklist = new Map();
 function cleanBlacklist(){
   const now = Date.now();
   for(const [sym, ts] of blacklist){
-    if(now - ts > 600000) blacklist.delete(sym); // 10dk
+    if(now - ts > 300000) blacklist.delete(sym); // 5dk
+  }
+  // Max 20 coin — eskiden eklenenler çıksın
+  if(blacklist.size > 20){
+    const sorted = [...blacklist.entries()].sort((a,b)=>a[1]-b[1]);
+    const toDelete = sorted.slice(0, blacklist.size - 20);
+    for(const [sym] of toDelete) blacklist.delete(sym);
   }
 }
 
