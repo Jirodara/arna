@@ -1189,7 +1189,7 @@ function volFilt(klines){
   const r10 = ma10>0 ? avg5/ma10 : 0;
 
   // ★ KESİN ELEME 1: Son 5 mum ortalaması MA10 altındaysa
-  // RONIN örneği: avg5≈200K, MA10=441K → r10=0.45 → ELEME
+  // avg5 < MA10 ise eleme
   if(avg5 < ma10){
     return{pass:false,score:0,ratio:r10,
       note:'❌ Son 5 mum ort.('+Math.round(avg5)+') < MA10('+Math.round(ma10)+') — hacimsiz'};
@@ -1640,6 +1640,23 @@ async function startScan(){
 
         // Öğrenme sistemi ağırlıklarını uygula
         let adjSc = applyLearning(sc, tr, rsiR, bol, vol);
+
+        // ★ MUM KAPANIŞI KONTROLÜ
+        // Mumun ortasında değil, kapanışına yakın veya yeni açılmışsa sinyal ver
+        const tfMs = {'5m':300000,'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000};
+        const candleMs = tfMs[tf] || 3600000;
+        const now_ms = Date.now();
+        const elapsed = now_ms % candleMs;       // Bu mumda geçen süre
+        const remaining = candleMs - elapsed;    // Kapanmaya kalan süre
+        const elapsedPct = elapsed / candleMs;   // 0-1 arası
+        // Geçerli: Son %20 (kapanmak üzere) VEYA ilk %10 (yeni açıldı)
+        const candleOk = elapsedPct >= 0.80 || elapsedPct <= 0.10;
+        if(!candleOk){
+          // Mum ortasında — sinyal güvenilmez, atla
+          const kalan = Math.round(remaining/60000);
+          log('⏳ '+sym.replace('USDT','').substring(0,6)+' — mum ortası ('+kalan+'dk kaldı)','gold');
+          continue;
+        }
 
         if(adjSc>=minSc){
           let rsi = rsiR;
@@ -2154,7 +2171,7 @@ function drawLiveChart(){
   canvas.width = W;
   canvas.height = H;
 
-  const prices = chartData.prices;
+  let prices = chartData.prices;
   if(prices.length < 2){ ctx.clearRect(0,0,W,H); return; }
 
   const mn = Math.min(...prices, trade.trailSL, trade.entry);
