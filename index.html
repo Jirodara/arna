@@ -432,7 +432,7 @@ body{
         </div>
         <div class="p-group">
           <label>Min Skor</label>
-          <input type="number" id="p-score" value="70" step="5" min="50" max="95">
+          <input type="number" id="p-score" value="85" step="5" min="50" max="95">
         </div>
         <div class="p-group">
           <label>Zaman Dilimi</label>
@@ -1549,8 +1549,8 @@ async function startScan(){
       if(!isUSDT && !isTRY) continue;
       if(SKIP.has(raw.symbol)) continue;
       const volUSD = isTRY ? +raw.quoteVolume/usdTry : +raw.quoteVolume;
-      if(volUSD < 2000000) continue;
-      if(+raw.count < 5000) continue;
+      if(volUSD < 15000000) continue; // Min $15M 24s hacim
+      if(+raw.count < 15000) continue;  // Min 15.000 işlem
       const priceUSD = isTRY ? +raw.lastPrice/usdTry : +raw.lastPrice;
       const c = +raw.priceChangePercent;
       // Yüzdelik filtre açıksa kontrol et — kapalıysa tüm coinler geçer
@@ -1626,7 +1626,9 @@ async function startScan(){
               if(Array.isArray(uKd) && uKd.length >= 30){
                 const uCloses = uKd.map(k=>+k[4]);
                 const uTr = trendFilt(uCloses);
-                if(!uTr.pass){
+                const uRsi = calcRSI(uCloses, 14);
+                // Üst TF: trend yukarı VE RSI aşırı alımda değil
+                if(!uTr.pass || uRsi > 78){
                   // USDT ve TRY versiyonlarını kara listeye al
                   const baseName = sym.replace('USDT','');
                   blacklist.set(baseName+'USDT', Date.now());
@@ -1709,7 +1711,7 @@ async function startScan(){
           results.push({
             symbol:sym, displayName:sym.replace('USDT',''),
             price, change, volume:parseFloat(t.quoteVolume),
-            score:adjSc, verdict:adjSc>=80?'BUY':'WATCH',
+            score:adjSc, verdict:adjSc>=85?'BUY':'WATCH',
             trend:tr, rsi, boll:bol, vol,
             klines, swingLow:sl,
             targetTP:tp.tp, tpPct:tp.pct,
