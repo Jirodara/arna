@@ -762,6 +762,10 @@ function closeWS(){
   setLive(false);
 }
 
+// Momentum takibi için son fiyatlar
+const momentumPrices = [];
+const MOMENTUM_SIZE = 8; // Son 8 fiyat
+
 async function pollPrice(sym){
   if(!trade || trade.symbol !== sym) return;
   const endpoints = [
@@ -778,9 +782,13 @@ async function pollPrice(sym){
         const price = parseFloat(d.price);
         if(price && trade && trade.symbol === sym){
           trade.livePrice = price;
+          // Momentum takibine ekle
+          momentumPrices.push(price);
+          if(momentumPrices.length > MOMENTUM_SIZE) momentumPrices.shift();
           setLive(true);
           updateTrail(price);
           updateTradePNL();
+          checkMomentumExit(price); // Momentum çıkış kontrolü
           checkExit();
           success = true;
           break;
@@ -789,9 +797,50 @@ async function pollPrice(sym){
     }catch(e){ continue; }
   }
   if(!success) setLive(false);
-  // 3 saniyede bir tekrar
   if(trade && trade.symbol === sym){
     pricePoller = setTimeout(()=>pollPrice(sym), 3000);
+  }
+}
+
+// Momentum çıkış sistemi
+function checkMomentumExit(price){
+  if(!trade || momentumPrices.length < MOMENTUM_SIZE) return;
+  const pnlPct = (price - trade.entry) / trade.entry * 100;
+  // Sadece karda ve TP'nin %60'ını aştıysa momentum takibi yap
+  if(pnlPct < trade.tpPct * 0.6) return;
+
+  // Son 8 fiyatın eğimini hesapla (lineer regresyon yerine basit: son 3 vs önceki 3)
+  const recent3  = momentumPrices.slice(-3).reduce((a,b)=>a+b,0)/3;
+  const older3   = momentumPrices.slice(-6,-3).reduce((a,b)=>a+b,0)/3;
+  const momentum = (recent3 - older3) / older3 * 100;
+
+  const now = Date.now();
+  if(!trade._momentumCD || now - trade._momentumCD > 15000){
+    if(momentum < -0.3){
+      // Momentum kırıldı — fiyat yavaşladı veya döndü
+      trade._momentumCD = now;
+      const pnl = (price - trade.entry) / trade.entry * trade.posUSD;
+
+      // Eğer karda ve momentum negatifse → TP'yi şu anki fiyata sıkıştır
+      const smartTP = price * 1.003; // %0.3 daha yukarı bekle, sonra çık
+      if(smartTP < trade.targetTP){
+        trade.targetTP = smartTP;
+        document.getElementById('tb-tp').textContent='$'+fmtP(smartTP);
+        document.getElementById('tbl-tp').textContent='TP $'+fmtP(smartTP);
+        log('📉 Momentum kırıldı → TP sıkıştırıldı: $'+fmtP(smartTP)+' (kar: +$'+pnl.toFixed(2)+')','gold');
+        sndWarn();
+      }
+    } else if(momentum > 0.5 && pnlPct > trade.tpPct){
+      // Momentum güçlü ve TP aşıldı → TP'yi yukarı taşı
+      const newTP = price * 1.008;
+      if(newTP > trade.targetTP){
+        trade.targetTP = newTP;
+        trade._momentumCD = now;
+        document.getElementById('tb-tp').textContent='$'+fmtP(newTP);
+        document.getElementById('tbl-tp').textContent='TP $'+fmtP(newTP);
+        log('🚀 Momentum güçlü → TP yükseltildi: $'+fmtP(newTP),'up');
+      }
+    }
   }
 }
 
@@ -1555,8 +1604,8 @@ async function startScan(){
       if(!isUSDT && !isTRY) continue;
       if(SKIP.has(raw.symbol)) continue;
       const volUSD = isTRY ? +raw.quoteVolume/usdTry : +raw.quoteVolume;
-      if(volUSD < 15000000) continue; // Min $15M 24s hacim
-      if(+raw.count < 15000) continue;  // Min 15.000 işlem
+      if(volUSD < 5000000) continue;  // Min $5M 24s hacim
+      if(+raw.count < 10000) continue; // Min 10.000 işlem — silinmiş/ölü coinleri ele
       const priceUSD = isTRY ? +raw.lastPrice/usdTry : +raw.lastPrice;
       const c = +raw.priceChangePercent;
       // Yüzdelik filtre açıksa kontrol et — kapalıysa tüm coinler geçer
@@ -2339,6 +2388,7 @@ function drawLiveChart(){
 function resetChart(){
   chartData.prices=[];
   chartData.times=[];
+  momentumPrices.length=0;
   const wrap=document.getElementById('liveChartWrap');
   if(wrap) wrap.style.display='none';
 }
