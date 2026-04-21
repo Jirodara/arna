@@ -764,7 +764,7 @@ function closeWS(){
 
 // Momentum takibi için son fiyatlar
 const momentumPrices = [];
-const MOMENTUM_SIZE = 8; // Son 8 fiyat
+const MOMENTUM_SIZE = 20; // Son 20 fiyat = 1 dakika (3sn polling)
 
 async function pollPrice(sym){
   if(!trade || trade.symbol !== sym) return;
@@ -810,13 +810,14 @@ function checkMomentumExit(price){
   if(pnlPct < trade.tpPct * 0.6) return;
 
   // Son 8 fiyatın eğimini hesapla (lineer regresyon yerine basit: son 3 vs önceki 3)
-  const recent3  = momentumPrices.slice(-3).reduce((a,b)=>a+b,0)/3;
-  const older3   = momentumPrices.slice(-6,-3).reduce((a,b)=>a+b,0)/3;
-  const momentum = (recent3 - older3) / older3 * 100;
+  // Son 5 ile önceki 5'i karşılaştır - daha güvenilir
+  const recent5  = momentumPrices.slice(-5).reduce((a,b)=>a+b,0)/5;
+  const older5   = momentumPrices.slice(-10,-5).reduce((a,b)=>a+b,0)/5;
+  const momentum = (recent5 - older5) / older5 * 100;
 
   const now = Date.now();
-  if(!trade._momentumCD || now - trade._momentumCD > 15000){
-    if(momentum < -0.3){
+  if(!trade._momentumCD || now - trade._momentumCD > 30000){
+    if(momentum < -0.2){
       // Momentum kırıldı — fiyat yavaşladı veya döndü
       trade._momentumCD = now;
       const pnl = (price - trade.entry) / trade.entry * trade.posUSD;
@@ -952,7 +953,7 @@ window.enterTrade = function(idx){
   const s = signals[idx]; if(!s) return;
   const posUSD   = Math.min(parseFloat(document.getElementById('p-pos').value)||400, demoBal);
   const trailPct = parseFloat(document.getElementById('p-trail').value)||1.5;
-  const tpPct    = s.score>=85?2.5 : s.score>=75?1.8 : 1.2;
+  const tpPct    = s.score>=90?4.0 : s.score>=85?3.0 : s.score>=75?2.0 : 1.5;
   // SL = trailing % ile hesapla, ama swing low daha yakınsa onu kullan
   // Swing low çok uzaksa (>%3) trailing %'yi kullan
   const trailSL   = s.price*(1-trailPct/100);
@@ -1312,7 +1313,8 @@ function totalScore(tr,rsi,bol,vol,chg){
 
 /* TP hesapla */
 function calcTP(price,score){
-  const pct = score>=85?2.5 : score>=75?1.8 : 1.2;
+  // Risk/ödül min 1.5:1 olmalı (SL %1.5 ise TP min %2.25)
+  const pct = score>=90?4.0 : score>=85?3.0 : score>=75?2.0 : 1.5;
   return{tp:price*(1+pct/100), pct};
 }
 
@@ -1635,8 +1637,8 @@ async function startScan(){
       }
     }
 
-    const cands2 = cands; // İkisi de taransın, sonunda skor bazlı seçilecek
-    log('Filtre 1: '+cands2.length+' coin '+(pctFilterOn ? minC+'%–'+maxC+'% arasında' : 'tüm piyasa'),'blue');
+    // cands zaten hazır - hacime göre sıralandı
+    log('Filtre 1: '+cands.length+' coin '+(pctFilterOn ? minC+'%–'+maxC+'% arasında' : 'tüm piyasa'),'blue');
     if(!cands.length){ 
       log('⚠️ Bu aralıkta ('+minC+'%–'+maxC+'%) coin yok şu an. Min/Max yükseliş değerlerini değiştirip tekrar deneyin.','gold'); 
       signals=[]; 
@@ -1646,7 +1648,9 @@ async function startScan(){
 
     setP(20,'Katmanlı analiz başlıyor...');
     const results=[];
-    const lim=Math.min(cands2.length,30);
+    // Önce hacime göre sırala — büyük coinler önce gelsin
+    cands.sort((a,b)=>parseFloat(b.quoteVolume)-parseFloat(a.quoteVolume));
+    const lim=Math.min(cands.length, 60); // 30 → 60 coin analiz et
 
     for(let i=0;i<lim;i++){
       let t=cands[i]; let sym=t.symbol;
@@ -1683,10 +1687,12 @@ async function startScan(){
                 const uCloses = uKd.map(k=>+k[4]);
                 const uTr = trendFilt(uCloses);
                 const uRsi = calcRSI(uCloses, 14);
-                // Üst TF: sadece hem trend hem MACD aşağıysa ele
-                // RSI <35 ise dip fırsatı olabilir - eleme
-                const hardDown = !uTr.pass && uTr.macdLine < uTr.macdSig && uRsi < 45 && uRsi > 35;
-                if(hardDown){
+                // Üst TF filtresi: trend aşağı VE RSI orta bölgede (45-65)
+                // RSI < 35 = aşırı satım, dip fırsatı olabilir → geçir
+                // RSI > 65 = momentum var → geçir  
+                // RSI 35-65 arası VE trend aşağı = gerçek aşağı trend → ele
+                const isRealDowntrend = !uTr.pass && uRsi >= 35 && uRsi <= 65;
+                if(isRealDowntrend){
                   // USDT ve TRY versiyonlarını kara listeye al
                   const baseName = sym.replace('USDT','');
                   blacklist.set(baseName+'USDT', Date.now());
@@ -1700,10 +1706,8 @@ async function startScan(){
           }catch(e){ /* üst TF alınamazsa devam et */ }
         }
 
-        // ★ KARA LİSTE — Son 30dk elenen coinleri atla (log'a yazmadan)
-        if(blacklist.has(sym)){
-          continue;
-        }
+        // ★ KARA LİSTE — Zaten elenen coinleri atla
+        if(blacklist.has(sym)) continue;
 
         // ★ ZİRVE KONTROLÜ
         let peakCheck = isPeakRecovery(klines, price, high24h);
