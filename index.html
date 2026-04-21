@@ -1829,6 +1829,9 @@ async function startScan(){
     if(buyN>0){ sndSignal(); notify('🚀 ARNA',buyN+' AL sinyali bulundu!'); }
     if(signals.length) goTab('signals');
     // OTO AL/SAT modda tarama bitti → otomatik giriş dene
+    // Sinyal listesi güncellendi, beklemedeki sinyali iptal et
+    if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer=null; }
+    pendingSignal = null;
     if(autoTradeOn && !trade) setTimeout(autoEnter, 1000);
 
   }catch(err){
@@ -1906,25 +1909,140 @@ function toggleAutoTrade(){
 function toggleAuto(){ toggleAutoScan(); }
 // autoOn — eski tanım üstte mevcut
 
-// Otomatik giriş — en yüksek skorlu BUY sinyaline gir
+// Beklemedeki sinyal
+let pendingSignal = null;
+let pendingTimer = null;
+
+// Otomatik giriş — mum kapanışını bekle
 function autoEnter(){
   if(!autoTradeOn) return;
   if(trade){ 
     log('🤖 OTO: Açık işlem var, bekleniyor...','blue');
     return;
   }
+  if(pendingSignal){
+    log('🤖 OTO: Mum kapanışı bekleniyor — '+pendingSignal.displayName,'blue');
+    return;
+  }
   // BUY sinyallerini filtrele, en yüksek skoru al
-  const buys = signals.filter(s=>s.verdict==='BUY' && s.score>=80);
+  const buys = signals.filter(s=>s.verdict==='BUY' && s.score>=85);
   if(!buys.length){
     log('🤖 OTO: BUY sinyali yok, bekleniyor...','gold');
     return;
   }
-  const best = buys[0]; // Zaten skora göre sıralı
-  log('🤖 OTO GİRİŞ: '+best.displayName+' skor:'+best.score,'up');
-  notify('🤖 OTO GİRİŞ', best.displayName+' @ $'+fmtP(best.price)+' skor:'+best.score);
-  // Sinyal indeksini bul
-  const idx = signals.indexOf(best);
-  if(idx>=0) enterTrade(idx);
+  const best = buys[0];
+  
+  // Mum kapanışına ne kadar kaldığını hesapla
+  const kline = best.klines ? best.klines[best.klines.length-1] : null;
+  if(!kline){
+    // Kline verisi yoksa direkt gir
+    doAutoEnter(best);
+    return;
+  }
+  
+  // Mum kapanış zamanını Binance'den al
+  waitForCandleClose(best);
+}
+
+async function waitForCandleClose(signal){
+  if(!autoTradeOn || trade) return;
+  
+  try{
+    const r = await apiFetch('/klines?symbol='+signal.symbol+'&interval='+signal.tf+'&limit=2');
+    if(!r.ok){ doAutoEnter(signal); return; }
+    const kd = await r.json();
+    if(!Array.isArray(kd)||kd.length<2){ doAutoEnter(signal); return; }
+    
+    const openCandle = kd[kd.length-1]; // Açık mum
+    const candleCloseTime = openCandle[6];
+    const now = Date.now();
+    const remaining = candleCloseTime - now;
+    const candleDuration = openCandle[6] - openCandle[0];
+    const elapsed = now - openCandle[0];
+    const elapsedPct = elapsed / candleDuration;
+    
+    // Mum zaten son %15'indeyse veya yeni açıldıysa direkt gir
+    if(elapsedPct >= 0.85 || elapsedPct <= 0.05){
+      doAutoEnter(signal);
+      return;
+    }
+    
+    // Mum ortasındaysa kapanışı bekle
+    const kalanDk = Math.round(remaining/60000);
+    pendingSignal = signal;
+    log('⏳ OTO: '+signal.displayName+' mum kapanışı bekleniyor ('+kalanDk+'dk) skor:'+signal.score,'gold');
+    notify('⏳ ARNA', signal.displayName+' — '+kalanDk+'dk sonra giriş değerlendirilecek');
+    
+    // Mum kapanınca kontrol et
+    if(pendingTimer) clearTimeout(pendingTimer);
+    pendingTimer = setTimeout(()=>checkAndEnter(signal), remaining + 2000);
+    
+  }catch(e){
+    doAutoEnter(signal); // Hata olursa direkt gir
+  }
+}
+
+async function checkAndEnter(signal){
+  pendingSignal = null;
+  pendingTimer = null;
+  
+  if(!autoTradeOn || trade) return;
+  
+  try{
+    // Yeni mum açıldı — fiyatı kontrol et
+    const r = await apiFetch('/klines?symbol='+signal.symbol+'&interval='+signal.tf+'&limit=3');
+    if(!r.ok){ log('⚠️ OTO: '+signal.displayName+' kontrol edilemedi','gold'); return; }
+    const kd = await r.json();
+    if(!Array.isArray(kd)||kd.length<2) return;
+    
+    const newCandle = kd[kd.length-1]; // Yeni açılan mum
+    const prevCandle = kd[kd.length-2]; // Kapanan mum
+    const newOpen = +newCandle[1];
+    const prevClose = +prevCandle[4];
+    const closes = kd.map(k=>+k[4]);
+    const newRsi = calcRSI(closes, closes.length > 14 ? 14 : closes.length-1);
+    
+    // Kontroller:
+    // 1. Fiyat sinyal fiyatına yakın mı? (±%2)
+    const priceDiff = Math.abs(newOpen - signal.price) / signal.price * 100;
+    if(priceDiff > 2){
+      log('❌ OTO: '+signal.displayName+' fiyat çok değişti ('+priceDiff.toFixed(1)+'%) — iptal','gold');
+      return;
+    }
+    
+    // 2. Yeni mum yeşil açıldı mı? (önceki kapanışa göre)
+    const newCandleGreen = newOpen >= prevClose * 0.999;
+    if(!newCandleGreen){
+      log('❌ OTO: '+signal.displayName+' yeni mum kırmızı açıldı — iptal','gold');
+      return;
+    }
+    
+    // 3. RSI hala iyi mi?
+    if(newRsi < 40 || newRsi > 78){
+      log('❌ OTO: '+signal.displayName+' RSI bozuldu ('+newRsi.toFixed(0)+') — iptal','gold');
+      return;
+    }
+    
+    // Tüm kontroller geçti → GİR
+    log('✅ OTO: '+signal.displayName+' mum kapandı, yeni mum iyi — GİRİŞ!','up');
+    doAutoEnter(signal);
+    
+  }catch(e){
+    log('⚠️ OTO: '+signal.displayName+' kontrol hatası','gold');
+  }
+}
+
+function doAutoEnter(signal){
+  if(!autoTradeOn || trade) return;
+  const idx = signals.indexOf(signal);
+  if(idx >= 0){
+    log('🤖 OTO GİRİŞ: '+signal.displayName+' @ $'+fmtP(signal.price)+' skor:'+signal.score,'up');
+    notify('🤖 OTO GİRİŞ', signal.displayName+' @ $'+fmtP(signal.price));
+    enterTrade(idx);
+  } else {
+    // Sinyal listesinde yoksa (tarama yenilendi) tekrar tara
+    log('⚠️ OTO: Sinyal listesi güncellendi, yeniden taranıyor...','gold');
+  }
 }
 
 function setP(pct,txt){
