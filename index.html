@@ -1784,7 +1784,7 @@ async function startScan(){
           results.push({
             symbol:sym, displayName:sym.replace('USDT',''),
             price, change, volume:parseFloat(t.quoteVolume),
-            score:adjSc, verdict:adjSc>=85?'BUY':'WATCH',
+            score:adjSc, verdict:adjSc>=minSc?'BUY':'WATCH',
             trend:tr, rsi, boll:bol, vol,
             klines, swingLow:sl,
             targetTP:tp.tp, tpPct:tp.pct,
@@ -1934,7 +1934,8 @@ function autoEnter(){
     return;
   }
   // BUY sinyallerini filtrele, en yüksek skoru al
-  const buys = signals.filter(s=>s.verdict==='BUY' && s.score>=85);
+  const minScore = parseInt(document.getElementById('p-score').value)||80;
+  const buys = signals.filter(s=>s.score >= minScore);
   if(!buys.length){
     log('🤖 OTO: BUY sinyali yok, bekleniyor...','gold');
     return;
@@ -2438,7 +2439,8 @@ function startPosCheck(){
   // TF'ye göre kontrol sıklığı
   const tfIntervals = {
     '1m': 60000, '3m': 120000, '5m': 180000,
-    '15m': 300000, '1h': 900000, '4h': 1800000, '1d': 3600000
+    '15m': 300000, '30m': 600000, '1h': 900000,
+    '2h': 1200000, '4h': 1800000, '1d': 3600000
   };
   const interval = tfIntervals[trade.tf] || 180000;
   const firstCheck = Math.min(interval, 30000); // İlk kontrol max 30sn sonra
