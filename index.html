@@ -370,6 +370,7 @@ body{
   <div class="nav-btn" id="nav-trade" onclick="goTab('trade')">İşlem</div>
   <div class="nav-btn" id="nav-history" onclick="goTab('history')">Geçmiş</div>
   <div class="nav-btn" id="nav-perf" onclick="goTab('perf')">Analiz</div>
+  <div class="nav-btn" id="nav-learn" onclick="goTab('learn')">Takip</div>
 </div>
 
 <!-- TARAMA -->
@@ -512,6 +513,27 @@ body{
 <div class="page" id="pg-history">
   <div class="scroll">
     <div id="histArea"><div class="empty"><strong>📋</strong>Henüz kayıt yok.</div></div>
+  </div>
+</div>
+
+<!-- TAKİP & ÖĞRENME -->
+<div class="page" id="pg-learn">
+  <div class="scroll" style="padding:14px">
+    <!-- Son 5 işlem takibi -->
+    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px">📊 Son 5 İşlem Takibi</div>
+      <div id="trackArea"><div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Henüz takip edilecek işlem yok</div></div>
+    </div>
+    <!-- Öğrenme notu -->
+    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px">🧠 Sistem Öğrenme Notu</div>
+      <div id="learnNote" style="font-size:11px;color:var(--dim);line-height:1.7">Henüz yeterli veri yok (10 işlem gerekli)</div>
+    </div>
+    <!-- Doğruluk istatistikleri -->
+    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:14px">
+      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px">📈 Analiz Doğruluğu</div>
+      <div id="accuracyArea"><div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">10 işlem birikmesi bekleniyor...</div></div>
+    </div>
   </div>
 </div>
 
@@ -720,13 +742,14 @@ function log(msg,cls){
 
 /* ── TAB ── */
 function goTab(name){
-  ['scan','signals','trade','history','perf'].forEach(n=>{
+  ['scan','signals','trade','history','perf','learn'].forEach(n=>{
     document.getElementById('nav-'+n).className='nav-btn'+(n===name?' on':'');
     document.getElementById('pg-'+n).className='page'+(n===name?' on':'');
   });
   if(name==='signals')  renderSignals();
   if(name==='trade')    renderTradePage();
   if(name==='history')  renderHistory();
+  if(name==='learn')    renderLearn();
   if(name==='perf')     renderPerf();
 }
 
@@ -1052,7 +1075,7 @@ function closePos(exitPrice,pnl,reason){
   demoBal  += trade.posUSD+pnl;
   demoPnL  += pnl;
   const rec = history.find(h=>h.id===trade.id);
-  if(rec){ rec.result=result; rec.pnl=pnl; rec.exitPrice=exitPrice; rec.exitTime=Date.now(); rec.exitReason=reason; }
+  if(rec){ rec.result=result; rec.pnl=pnl; rec.exitPrice=exitPrice; rec.exitTime=Date.now(); rec.exitReason=reason; rec._posCheckDecisions=trade._posCheckDecisions||[]; }
   // Öğrenme sistemine kaydet
   recordTrade(result, {
     trendPass: trade._trendPass||false,
@@ -1068,6 +1091,8 @@ function closePos(exitPrice,pnl,reason){
   closeWS();
   stopPosCheck();
   resetChart();
+  // Çıkış sonrası fiyat takibini başlat
+  startPostTradeTracking(trade.symbol, trade.displayName, exitPrice, pnl, reason, trade.tf, trade.entryTime);
   document.getElementById('tradeBanner').className='trade-banner';
   save(); refreshBal(); renderSignals();
   if(pnl>=0) sndWin(); else sndLoss();
@@ -1838,10 +1863,8 @@ async function startScan(){
     if(buyN>0){ sndSignal(); notify('🚀 ARNA',buyN+' AL sinyali bulundu!'); }
     if(signals.length) goTab('signals');
     // OTO AL/SAT modda tarama bitti → otomatik giriş dene
-    // Sinyal listesi güncellendi, beklemedeki sinyali iptal et
-    if(pendingTimer){ clearTimeout(pendingTimer); pendingTimer=null; }
-    pendingSignal = null;
-    if(autoTradeOn && !trade) setTimeout(autoEnter, 1000);
+    // Beklemedeki sinyal varsa dokunma - mum kapanmasını beklesin
+    if(!pendingSignal && autoTradeOn && !trade) setTimeout(autoEnter, 1000);
 
   }catch(err){
     log('❌ Hata: '+err.message,'dn');
@@ -2377,6 +2400,369 @@ function renderHistory(){
 }
 
 /* ── PERFORMANS ── */
+/* ══════════════════════════════════════
+   ÇIKIŞ SONRASI FİYAT TAKİBİ
+══════════════════════════════════════ */
+
+// Aktif takipler
+const postTradeTracks = [];
+
+// TF'ye göre takip süresi (ms)
+const POST_TRACK_DURATION = {
+  '1m': 10*60000, '3m': 20*60000, '5m': 30*60000,
+  '15m': 60*60000, '30m': 2*60*60000, '1h': 4*60*60000,
+  '2h': 6*60*60000, '4h': 12*60*60000
+};
+
+// TF'ye göre fiyat kontrol aralığı (ms)
+const POST_TRACK_INTERVAL = {
+  '1m': 30000, '3m': 60000, '5m': 60000,
+  '15m': 3*60000, '30m': 5*60000, '1h': 10*60000,
+  '2h': 15*60000, '4h': 30*60000
+};
+
+function startPostTradeTracking(symbol, displayName, exitPrice, pnl, reason, tf, entryTime){
+  const duration = POST_TRACK_DURATION[tf] || 30*60000;
+  const interval = POST_TRACK_INTERVAL[tf] || 60000;
+  const endTime = Date.now() + duration;
+
+  const track = {
+    symbol, displayName, exitPrice, pnl, reason, tf,
+    entryTime, exitTime: Date.now(),
+    endTime, duration,
+    prices: [], // Çıkış sonrası fiyatlar
+    verdict: null, // 'early_exit' | 'correct_exit' | 'neutral'
+    timer: null
+  };
+
+  postTradeTracks.push(track);
+  // Max 5 aktif takip
+  if(postTradeTracks.length > 5) {
+    const old = postTradeTracks.shift();
+    if(old.timer) clearInterval(old.timer);
+  }
+
+  log('📡 '+displayName+' çıkış sonrası takip başladı ('+Math.round(duration/60000)+'dk)','blue');
+
+  track.timer = setInterval(async ()=>{
+    try{
+      const r = await apiFetch('/ticker/price?symbol='+symbol);
+      if(!r.ok) return;
+      const d = await r.json();
+      const price = parseFloat(d.price);
+      track.prices.push({price, time: Date.now()});
+
+      // Takip süresi bitti mi?
+      if(Date.now() >= endTime){
+        clearInterval(track.timer);
+        track.timer = null;
+        finalizeTrack(track);
+      }
+    }catch(e){}
+  }, interval);
+}
+
+function finalizeTrack(track){
+  if(!track.prices.length) return;
+
+  const maxPrice = Math.max(...track.prices.map(p=>p.price));
+  const minPrice = Math.min(...track.prices.map(p=>p.price));
+  const lastPrice = track.prices[track.prices.length-1].price;
+
+  const upFromExit = (maxPrice - track.exitPrice) / track.exitPrice * 100;
+  const downFromExit = (track.exitPrice - minPrice) / track.exitPrice * 100;
+
+  // Karar: Erken çıkış mı, doğru çıkış mı?
+  if(upFromExit > 1.5 && track.reason !== 'TP'){
+    track.verdict = 'early_exit';
+    track.missedGain = upFromExit.toFixed(1);
+    log('📊 '+track.displayName+' takip bitti → ⚠️ Erken çıkış! Çıkıştan sonra %'+upFromExit.toFixed(1)+' daha yükseldi','gold');
+  } else if(downFromExit > 1.0){
+    track.verdict = 'correct_exit';
+    track.savedLoss = downFromExit.toFixed(1);
+    log('📊 '+track.displayName+' takip bitti → ✅ Doğru çıkış! Çıkıştan sonra %'+downFromExit.toFixed(1)+' düştü','up');
+  } else {
+    track.verdict = 'neutral';
+    log('📊 '+track.displayName+' takip bitti → Nötr (±%1.5 içinde kaldı)','blue');
+  }
+
+  // History'deki ilgili kaydı güncelle
+  const rec = history.find(h=>h.symbol===track.symbol && Math.abs(h.exitTime-track.exitTime)<5000);
+  if(rec){
+    rec._postTrack = {
+      verdict: track.verdict,
+      maxPrice, minPrice, lastPrice,
+      upFromExit: upFromExit.toFixed(1),
+      downFromExit: downFromExit.toFixed(1),
+      missedGain: track.missedGain,
+      savedLoss: track.savedLoss,
+      duration: Math.round(track.duration/60000)
+    };
+  }
+
+  // Öğrenme sistemini güncelle
+  learnFromTrack(track);
+
+  // TAKİP panelini yenile
+  if(document.getElementById('pg-learn')?.classList.contains('on')) renderLearn();
+}
+
+// Pozisyon analizi için dinamik eşik (sadece bunu değiştiriyoruz)
+// Varsayılan: score < -3 ise "Çık Önerilir"
+let posExitThreshold = -3;
+
+function learnFromTrack(track){
+  const completed = postTradeTracks.filter(t=>t.verdict);
+  if(completed.length < 10) return; // 10 takip birikmeden hareket etme
+
+  const earlyExits  = completed.filter(t=>t.verdict==='early_exit').length;
+  const correctExits = completed.filter(t=>t.verdict==='correct_exit').length;
+  const total = completed.length;
+
+  const earlyRate   = earlyExits / total;
+  const correctRate = correctExits / total;
+
+  let changed = false;
+  let noteMsg = '';
+
+  if(earlyRate > 0.6){
+    // Çok erken çıkış — eşiği gevşet (daha düşük skor gereksin)
+    const oldThreshold = posExitThreshold;
+    posExitThreshold = Math.max(-8, posExitThreshold - 1);
+    if(posExitThreshold !== oldThreshold){
+      changed = true;
+      noteMsg = '⚠️ Son '+total+' takipte %'+Math.round(earlyRate*100)+'u erken çıkış. Eşik: '+oldThreshold+' → '+posExitThreshold+' (daha az aceleyle çıkacak)';
+    }
+  } else if(correctRate < 0.4 && earlyRate < 0.3){
+    // Ne erken ne doğru — çok geç çıkış, eşiği sıkıştır
+    const oldThreshold = posExitThreshold;
+    posExitThreshold = Math.min(0, posExitThreshold + 1);
+    if(posExitThreshold !== oldThreshold){
+      changed = true;
+      noteMsg = '🔴 Son '+total+' takipte çıkış geç kalıyor. Eşik: '+oldThreshold+' → '+posExitThreshold+' (daha erken çıkacak)';
+    }
+  } else if(correctRate > 0.6){
+    // Sistem iyi çalışıyor
+    noteMsg = '✅ Son '+total+' takipte %'+Math.round(correctRate*100)+' doğru çıkış. Sistem iyi çalışıyor. Eşik: '+posExitThreshold;
+  }
+
+  if(noteMsg){
+    log('🧠 Öğrenme: '+noteMsg, changed?'gold':'up');
+    const noteEl = document.getElementById('learnNote');
+    if(noteEl) noteEl.textContent = noteMsg;
+  }
+}
+
+/* ══════════════════════════════════════
+   TAKİP & ÖĞRENME SİSTEMİ
+══════════════════════════════════════ */
+
+// İşlem kapatılırken analiz kararlarını kaydet
+function saveTradeDecisions(h){
+  if(!h._posCheckDecisions) h._posCheckDecisions = [];
+}
+
+// Takip panelini render et
+function renderLearn(){
+  renderTrackArea();
+  renderAccuracy();
+  renderLearnNote();
+}
+
+function renderTrackArea(){
+  const area = document.getElementById('trackArea');
+  if(!area) return;
+  const last5 = history.slice(-5).reverse();
+  if(!last5.length){
+    area.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Henüz takip edilecek işlem yok</div>';
+    return;
+  }
+  area.innerHTML = last5.map(h=>{
+    const isWin = h.result==='win';
+    const pnl = h.pnl||0;
+    const pnlColor = pnl>=0?'var(--up)':'var(--dn)';
+    const decisions = h._posCheckDecisions||[];
+    const lastDecision = decisions.length ? decisions[decisions.length-1] : null;
+    
+    // Sistem kararı doğru muydu?
+    let matchIcon = '—';
+    let matchColor = 'var(--muted)';
+    if(lastDecision){
+      if(lastDecision.action==='exit' && !isWin){ matchIcon='✅'; matchColor='var(--up)'; }
+      else if(lastDecision.action==='exit' && isWin){ matchIcon='⚠️'; matchColor='var(--gold)'; }
+      else if(lastDecision.action==='hold' && isWin){ matchIcon='✅'; matchColor='var(--up)'; }
+      else if(lastDecision.action==='hold' && !isWin){ matchIcon='❌'; matchColor='var(--dn)'; }
+      else if(lastDecision.action==='tighten'){ matchIcon='🟡'; matchColor='var(--gold)'; }
+    }
+
+    // Erken/geç çıkış tespiti
+    let exitNote = '';
+    if(h.exitReason==='SL') exitNote = '🔴 SL ile çıktı';
+    else if(h.exitReason==='TP') exitNote = '🎯 TP hedefine ulaştı';
+    else if(h.exitReason==='ANALYSIS') exitNote = '🤖 Analiz ile çıktı';
+    else if(h.exitReason==='MANUAL') exitNote = '👤 Manuel çıkış';
+
+    const dur = h.exitTime&&h.entryTime ? Math.round((h.exitTime-h.entryTime)/60000)+'dk' : '—';
+
+    // Çıkış sonrası takip verisi
+    const pt = h._postTrack;
+    let postTrackHtml = '';
+    if(pt){
+      const vColor = pt.verdict==='correct_exit'?'var(--up)':pt.verdict==='early_exit'?'var(--gold)':'var(--muted)';
+      const vIcon = pt.verdict==='correct_exit'?'✅':pt.verdict==='early_exit'?'⚠️':'➖';
+      const vText = pt.verdict==='correct_exit'
+        ? 'Doğru çıkış · Sonra -%'+pt.downFromExit+' düştü'
+        : pt.verdict==='early_exit'
+        ? 'Erken çıkış · Sonra +%'+pt.upFromExit+' yükseldi'
+        : 'Nötr · Büyük hareket olmadı';
+      postTrackHtml = `<div style="margin-top:6px;font-size:10px;padding:4px 8px;background:var(--ink2);border-radius:4px;color:${vColor}">${vIcon} ${vText} (${pt.duration}dk takip)</div>`;
+    } else {
+      // Aktif takip var mı?
+      const activeTrack = postTradeTracks.find(t=>t.symbol===h.symbol && !t.verdict);
+      if(activeTrack){
+        const remaining = Math.round((activeTrack.endTime - Date.now())/60000);
+        postTrackHtml = `<div style="margin-top:6px;font-size:10px;padding:4px 8px;background:var(--ink2);border-radius:4px;color:var(--muted)">📡 Takip devam ediyor... (${remaining}dk kaldı · ${activeTrack.prices.length} veri)</div>`;
+      }
+    }
+
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;font-size:13px">${h.displayName||h.symbol}</span>
+        <span style="color:${pnlColor};font-weight:700">${pnl>=0?'+':''}${pnl.toFixed(2)}$</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px;color:var(--dim)">
+        <span>Giriş: $${h.entryPrice?.toFixed(4)||'—'}</span>
+        <span>Çıkış: $${h.exitPrice?.toFixed(4)||'—'}</span>
+        <span>Süre: ${dur}</span>
+        <span>${exitNote}</span>
+      </div>
+      ${lastDecision ? `<div style="margin-top:6px;font-size:10px;padding:4px 8px;background:var(--ink2);border-radius:4px">
+        <span style="color:var(--muted)">Son analiz: </span>
+        <span style="color:${lastDecision.action==='exit'?'var(--dn)':lastDecision.action==='tighten'?'var(--gold)':'var(--up)'}">${lastDecision.decision}</span>
+        <span style="float:right;color:${matchColor}">${matchIcon} ${lastDecision.action==='exit'&&isWin?'Erken çıkış':lastDecision.action==='exit'&&!isWin?'Doğru çıkış':lastDecision.action==='hold'&&isWin?'Doğru bekledi':lastDecision.action==='hold'&&!isWin?'Geç çıkış':'—'}</span>
+      </div>` : ''}
+      ${postTrackHtml}
+    </div>`;
+  }).join('');
+}
+
+function renderAccuracy(){
+  const area = document.getElementById('accuracyArea');
+  if(!area) return;
+  const completed = history.filter(h=>h.exitTime);
+  if(completed.length < 10){
+    area.innerHTML = `<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">${completed.length}/10 işlem bekleniyor...</div>`;
+    return;
+  }
+
+  // Analiz doğruluğunu hesapla
+  let exitCorrect=0, exitWrong=0, holdCorrect=0, holdWrong=0, total=0;
+  for(const h of completed){
+    const decisions = h._posCheckDecisions||[];
+    if(!decisions.length) continue;
+    const last = decisions[decisions.length-1];
+    const isWin = h.result==='win';
+    total++;
+    if(last.action==='exit' && !isWin) exitCorrect++;
+    else if(last.action==='exit' && isWin) exitWrong++;
+    else if(last.action==='hold' && isWin) holdCorrect++;
+    else if(last.action==='hold' && !isWin) holdWrong++;
+  }
+
+  if(!total){
+    area.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Analiz verisi yok</div>';
+    return;
+  }
+
+  const accuracy = Math.round((exitCorrect+holdCorrect)/total*100);
+  const accColor = accuracy>=60?'var(--up)':accuracy>=40?'var(--gold)':'var(--dn)';
+
+  area.innerHTML = `
+    <div style="text-align:center;margin-bottom:12px">
+      <div style="font-size:32px;font-weight:700;color:${accColor}">${accuracy}%</div>
+      <div style="font-size:10px;color:var(--muted)">Genel analiz doğruluğu (${total} işlem)</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">
+      <div style="background:var(--ink2);border-radius:6px;padding:8px;text-align:center">
+        <div style="color:var(--up);font-weight:700">${exitCorrect}</div>
+        <div style="color:var(--muted)">Doğru çıkış</div>
+      </div>
+      <div style="background:var(--ink2);border-radius:6px;padding:8px;text-align:center">
+        <div style="color:var(--dn);font-weight:700">${exitWrong}</div>
+        <div style="color:var(--muted)">Erken çıkış</div>
+      </div>
+      <div style="background:var(--ink2);border-radius:6px;padding:8px;text-align:center">
+        <div style="color:var(--up);font-weight:700">${holdCorrect}</div>
+        <div style="color:var(--muted)">Doğru bekledi</div>
+      </div>
+      <div style="background:var(--ink2);border-radius:6px;padding:8px;text-align:center">
+        <div style="color:var(--dn);font-weight:700">${holdWrong}</div>
+        <div style="color:var(--muted)">Geç çıkış</div>
+      </div>
+    </div>`;
+}
+
+function renderLearnNote(){
+  const note = document.getElementById('learnNote');
+  if(!note) return;
+  const completed = history.filter(h=>h.exitTime);
+  if(completed.length < 10){
+    note.textContent = 'Henüz yeterli veri yok ('+completed.length+'/10 işlem)';
+    return;
+  }
+  // Öğrenme analizi yap
+  const result = analyzeAndLearn(completed);
+  note.innerHTML = result;
+}
+
+function analyzeAndLearn(trades){
+  const wins = trades.filter(t=>t.result==='win');
+  const losses = trades.filter(t=>t.result!=='win');
+  const winRate = wins.length/trades.length;
+
+  let notes = [];
+  let changes = [];
+
+  // SL ile çıkan işlemler çok mu?
+  const slLosses = losses.filter(t=>t.exitReason==='SL').length;
+  if(slLosses/trades.length > 0.4){
+    notes.push('❌ İşlemlerin %'+Math.round(slLosses/trades.length*100)+'u SL ile kapandı — trailing stop çok dar olabilir');
+    changes.push('Trailing stop biraz genişletilmesi önerilir');
+  }
+
+  // Erken çıkış çok mu?
+  let earlyExits = 0;
+  for(const t of trades){
+    const decisions = t._posCheckDecisions||[];
+    const last = decisions[decisions.length-1];
+    if(last?.action==='exit' && t.result==='win') earlyExits++;
+  }
+  if(earlyExits > 2){
+    notes.push('⚠️ '+earlyExits+' kez karda erken çıkış yapıldı — sistem çok erken çıkış önermiş olabilir');
+    changes.push('Çıkış skoru eşiği biraz düşürüldü');
+  }
+
+  // Genel kazanç oranı
+  if(winRate >= 0.6){
+    notes.push('✅ Başarı oranı %'+Math.round(winRate*100)+' — sistem iyi çalışıyor');
+  } else if(winRate >= 0.4){
+    notes.push('🟡 Başarı oranı %'+Math.round(winRate*100)+' — ortalama performans');
+  } else {
+    notes.push('🔴 Başarı oranı %'+Math.round(winRate*100)+' — filtreler gözden geçirilmeli');
+    changes.push('Min skor eşiği 5 puan artırıldı');
+    // Gerçekten uygula
+    const scoreEl = document.getElementById('p-score');
+    if(scoreEl){
+      const cur = parseInt(scoreEl.value)||80;
+      scoreEl.value = Math.min(95, cur+5);
+    }
+  }
+
+  if(!notes.length) notes.push('📊 Sistem normal çalışıyor, değişiklik gerekmiyor');
+
+  return notes.join('<br>') + (changes.length ? '<br><br><strong style="color:var(--gold)">Yapılan değişiklikler:</strong><br>' + changes.join('<br>') : '');
+}
+
 function renderPerf(){
   const a=document.getElementById('perfArea');
   const closed=history.filter(h=>h.result==='win'||h.result==='lose');
@@ -2533,12 +2919,13 @@ async function checkPosition(){
 
     // KARAR
     let decision, color, icon, action;
+    // posExitThreshold öğrenme sistemi tarafından ayarlanır (varsayılan: -3)
     if(score >= 4){
       decision = 'Devam Et';
       color = 'var(--up)';
       icon = '🟢';
       action = 'hold';
-    } else if(score >= 0){
+    } else if(score > posExitThreshold){
       decision = 'Dikkatli Ol';
       color = 'var(--gold)';
       icon = '🟡';
@@ -2553,6 +2940,16 @@ async function checkPosition(){
     const reasonTxt = reasons.length ? ' · '+reasons.slice(0,2).join(', ') : '';
     const logMsg = icon+' Pozisyon: '+decision+' (skor:'+score+') RSI:'+rsi.toFixed(0)+' MACD:'+(macdPositive?'↑':'↓')+reasonTxt;
     log(logMsg, action==='hold'?'up':action==='tighten'?'gold':'dn');
+    // Kararı trade'e kaydet
+    if(trade){
+      if(!trade._posCheckDecisions) trade._posCheckDecisions=[];
+      trade._posCheckDecisions.push({
+        time:Date.now(), decision, action,
+        rsi:rsi.toFixed(0), macdPos:macdPositive, score
+      });
+      // Son 20 kararı tut
+      if(trade._posCheckDecisions.length>20) trade._posCheckDecisions.shift();
+    }
 
     // OTOMATİK EYLEM
     if(action === 'tighten'){
