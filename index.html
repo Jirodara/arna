@@ -984,6 +984,7 @@ window.enterTrade = function(idx){
   resetChart();
   openWS(s.symbol);
   startEl();
+  startPosCheck(); // Pozisyon değerlendirmesi başlat
   sndSignal();
   log('✅ GİRİŞ: '+s.displayName+' @ $'+fmtP(s.price)+' | Pos $'+posUSD+' | SL $'+fmtP(initSL),'up');
 
@@ -1060,6 +1061,7 @@ function closePos(exitPrice,pnl,reason){
   if(elTimer){clearInterval(elTimer);elTimer=null;}
   if(upperTFTimer){clearInterval(upperTFTimer);upperTFTimer=null;}
   closeWS();
+  stopPosCheck();
   resetChart();
   document.getElementById('tradeBanner').className='trade-banner';
   save(); refreshBal(); renderSignals();
@@ -2290,6 +2292,170 @@ function renderPerf(){
 
 /* ── UTILS ── */
 function fmtV(v){ if(v>=1e9)return(v/1e9).toFixed(1)+'B'; if(v>=1e6)return(v/1e6).toFixed(1)+'M'; return(v/1e3).toFixed(0)+'K'; }
+
+/* ══════════════════════════════════════
+   DİNAMİK POZİSYON DEĞERLENDİRMESİ
+   Her 3 dakikada mevcut pozisyonu analiz eder:
+   - Mum hareketi (son 5 mum)
+   - Hacim trendi
+   - RSI durumu
+   - MACD momentum
+   - Bollinger konumu
+   Karar: Devam Et / Dikkatli Ol / Çık
+══════════════════════════════════════ */
+let posCheckTimer = null;
+
+function startPosCheck(){
+  if(posCheckTimer) clearInterval(posCheckTimer);
+  if(!trade) return;
+  // TF'ye göre kontrol sıklığı
+  const tfIntervals = {
+    '1m': 60000, '3m': 120000, '5m': 180000,
+    '15m': 300000, '1h': 900000, '4h': 1800000, '1d': 3600000
+  };
+  const interval = tfIntervals[trade.tf] || 180000;
+  const firstCheck = Math.min(interval, 30000); // İlk kontrol max 30sn sonra
+  setTimeout(()=>{
+    checkPosition();
+    posCheckTimer = setInterval(checkPosition, interval);
+  }, firstCheck);
+  log('📊 Pozisyon takibi başladı ('+Math.round(interval/60000)+'dk aralık)','blue');
+}
+
+function stopPosCheck(){
+  if(posCheckTimer){ clearInterval(posCheckTimer); posCheckTimer=null; }
+}
+
+async function checkPosition(){
+  if(!trade) return;
+  const sym = trade.symbol;
+  const tf  = trade.tf || '1h';
+  const lp  = trade.livePrice || trade.entry;
+  const pnlPct = (lp - trade.entry) / trade.entry * 100;
+
+  try{
+    // Kline verisi çek
+    const r = await apiFetch('/klines?symbol='+sym+'&interval='+tf+'&limit=30');
+    if(!r.ok) return;
+    const kd = await r.json();
+    if(!Array.isArray(kd) || kd.length < 20) return;
+
+    const klines = kd.map(k=>({o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+    const closes = klines.map(k=>k.c);
+    const vols   = klines.map(k=>k.v);
+
+    // 1. MUM ANALİZİ — son 5 mum
+    const last5 = klines.slice(-6,-1); // Kapanmış son 5 mum
+    const greenCount = last5.filter(k=>k.c>k.o).length;
+    const redCount   = last5.filter(k=>k.c<=k.o).length;
+    // Fitil/gövde oranı
+    const lastCandle = last5[last5.length-1];
+    const body  = Math.abs(lastCandle.c - lastCandle.o);
+    const range = lastCandle.h - lastCandle.l;
+    const wickRatio = range > 0 ? (range - body) / range : 0;
+    const hasLongWick = wickRatio > 0.6; // Gövdenin %60'ından fazlası fitil
+
+    // 2. HACİM TRENDİ
+    const volNow  = vols.slice(-3).reduce((a,b)=>a+b,0)/3;
+    const volPrev = vols.slice(-8,-3).reduce((a,b)=>a+b,0)/5;
+    const volRising = volNow > volPrev * 1.1; // %10 artış
+    const volFalling = volNow < volPrev * 0.8; // %20 düşüş
+
+    // 3. RSI
+    const rsi = calcRSI(closes, 14);
+    const rsiOk      = rsi >= 45 && rsi <= 72;
+    const rsiOverbought = rsi > 75;
+    const rsiWeak    = rsi < 45;
+
+    // 4. MACD
+    const macd = calcMACD(closes);
+    const macdPositive = macd.hist > 0;
+    const macdDivergence = macd.hist < 0 && macd.line > 0; // Zayıflama
+
+    // 5. BOLLINGER
+    const boll = calcBoll(closes);
+    const bollPct = (lp - boll.dn) / (boll.up - boll.dn + 0.0001);
+    const nearUpperBand = bollPct > 0.85; // Üst banda çok yakın
+    const aboveMid      = bollPct > 0.5;
+
+    // KARAR MANTĞI
+    let score = 0;
+    let reasons = [];
+
+    // Pozitif sinyaller
+    if(greenCount >= 3)    { score += 2; }
+    if(volRising)          { score += 2; reasons.push('hacim artıyor'); }
+    if(rsiOk)              { score += 2; }
+    if(macdPositive)       { score += 2; }
+    if(aboveMid)           { score += 1; }
+
+    // Negatif sinyaller
+    if(redCount >= 4)      { score -= 3; reasons.push('mumlar kırmızı'); }
+    if(hasLongWick)        { score -= 2; reasons.push('uzun fitil'); }
+    if(volFalling)         { score -= 2; reasons.push('hacim düşüyor'); }
+    if(rsiOverbought)      { score -= 3; reasons.push('RSI aşırı alım'); }
+    if(rsiWeak)            { score -= 2; reasons.push('RSI zayıf'); }
+    if(macdDivergence)     { score -= 2; reasons.push('MACD zayıflıyor'); }
+    if(nearUpperBand)      { score -= 2; reasons.push('üst banda dayandı'); }
+
+    // Karda olma bonusu — kardaysa daha uzun tut
+    if(pnlPct > 1.5)  score += 1;
+    if(pnlPct > 2.5)  score += 1;
+
+    // KARAR
+    let decision, color, icon, action;
+    if(score >= 4){
+      decision = 'Devam Et';
+      color = 'var(--up)';
+      icon = '🟢';
+      action = 'hold';
+    } else if(score >= 0){
+      decision = 'Dikkatli Ol';
+      color = 'var(--gold)';
+      icon = '🟡';
+      action = 'tighten';
+    } else {
+      decision = 'Çık Önerilir';
+      color = 'var(--dn)';
+      icon = '🔴';
+      action = 'exit';
+    }
+
+    const reasonTxt = reasons.length ? ' · '+reasons.slice(0,2).join(', ') : '';
+    const logMsg = icon+' Pozisyon: '+decision+' (skor:'+score+') RSI:'+rsi.toFixed(0)+' MACD:'+(macdPositive?'↑':'↓')+reasonTxt;
+    log(logMsg, action==='hold'?'up':action==='tighten'?'gold':'dn');
+
+    // OTOMATİK EYLEM
+    if(action === 'tighten'){
+      // SL'yi sıkıştır — mevcut fiyatın %0.8 altına
+      const tighterSL = lp * (1 - (trade.trailPct * 0.5)/100);
+      if(tighterSL > trade.trailSL){
+        trade.trailSL = tighterSL;
+        log('⚡ SL sıkıştırıldı: $'+fmtP(tighterSL),'gold');
+      }
+    } else if(action === 'exit' && pnlPct > 0.3){
+      // Karda ve çıkış öneriliyorsa otomatik çık
+      const pnl = (lp - trade.entry) / trade.entry * trade.posUSD;
+      log('🤖 OTO ÇIKIŞ: Pozisyon analizi → '+decision+' | '+pnl.toFixed(2)+'$','gold');
+      notify('🤖 Pozisyon Analizi', trade.displayName+' → '+decision+' | Kar: $'+pnl.toFixed(2));
+      closePos(lp, pnl, 'ANALYSIS');
+      return;
+    }
+
+    // Banner'da göster
+    const ea = document.getElementById('exitAlert');
+    if(ea && trade){
+      ea.className='exit-alert on';
+      ea.innerHTML = icon+' <strong style="color:'+color+'">'+decision+'</strong>'
+        + '<span style="font-size:9px;opacity:.7;margin-left:8px">RSI:'+rsi.toFixed(0)
+        + ' · MACD:'+(macdPositive?'↑':'↓')
+        + (reasonTxt ? ' · '+reasons.slice(0,2).join(', ') : '')+'</span>';
+      // 2.5 dakika sonra temizle (bir sonraki kontrole kadar)
+      setTimeout(()=>{ if(ea&&trade) ea.className='exit-alert'; }, 150000);
+    }
+
+  }catch(e){ /* sessiz hata */ }
+}
 
 /* ── CANLI GRAFİK ── */
 const chartData = { prices:[], times:[], maxLen:60 };
