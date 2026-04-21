@@ -430,9 +430,12 @@ body{
           <label>Max Yükseliş %</label>
           <input type="number" id="p-max" value="5" step="0.5" min="2" max="25">
         </div>
+      </div>
+      <!-- Diğer parametreler her zaman görünür -->
+      <div class="params">
         <div class="p-group">
           <label>Min Skor</label>
-          <input type="number" id="p-score" value="85" step="5" min="50" max="95">
+          <input type="number" id="p-score" value="80" step="5" min="50" max="95">
         </div>
         <div class="p-group">
           <label>Zaman Dilimi</label>
@@ -441,7 +444,9 @@ body{
             <option value="3m">3 Dakika</option>
             <option value="5m">5 Dakika</option>
             <option value="15m">15 Dakika</option>
+            <option value="30m">30 Dakika</option>
             <option value="1h" selected>1 Saat</option>
+            <option value="2h">2 Saat</option>
             <option value="4h">4 Saat</option>
           </select>
         </div>
@@ -1340,12 +1345,14 @@ function calcTP(price,score){
 // Bir TF'nin üstündeki iki TF'yi döner
 function upperTFs(tf){
   const map = {
-    '1m':  ['5m', '15m'],
-    '3m':  ['15m','1h'],
-    '5m':  ['15m','1h'],
-    '15m': ['1h', '4h'],
-    '1h':  ['4h', '1d'],
-    '4h':  ['1d', null],
+    '1m':  ['3m',  '15m'],
+    '3m':  ['15m', '1h'],
+    '5m':  ['15m', '1h'],
+    '15m': ['30m', '1h'],
+    '30m': ['1h',  '2h'],
+    '1h':  ['2h',  '4h'],
+    '2h':  ['4h',  '6h'],
+    '4h':  ['6h',  null],
   };
   return map[tf] || ['1h','4h'];
 }
@@ -1652,7 +1659,7 @@ async function startScan(){
     const results=[];
     // Önce hacime göre sırala — büyük coinler önce gelsin
     cands.sort((a,b)=>parseFloat(b.quoteVolume)-parseFloat(a.quoteVolume));
-    const lim=Math.min(cands.length, 60); // 30 → 60 coin analiz et
+    const lim=cands.length; // Tüm coinleri analiz et
 
     for(let i=0;i<lim;i++){
       let t=cands[i]; let sym=t.symbol;
@@ -1678,7 +1685,7 @@ async function startScan(){
 
         // ★ ÜST TF TREND FİLTRESİ — genel trend aşağıysa alma
         // Seçilen TF'nin bir üstüne bak
-        const upperTFMap = {'1m':'5m','3m':'15m','5m':'15m','15m':'1h','1h':'4h','4h':'1d'};
+        const upperTFMap = {'1m':'3m','3m':'15m','5m':'15m','15m':'30m','30m':'1h','1h':'2h','2h':'4h','4h':'6h'};
         const upperTF = upperTFMap[tf];
         if(upperTF){
           try{
@@ -1693,7 +1700,9 @@ async function startScan(){
                 // RSI < 35 = aşırı satım, dip fırsatı olabilir → geçir
                 // RSI > 65 = momentum var → geçir  
                 // RSI 35-65 arası VE trend aşağı = gerçek aşağı trend → ele
-                const isRealDowntrend = !uTr.pass && uRsi >= 35 && uRsi <= 65;
+                // Sadece hem trend hem MACD çok güçlü aşağıysa ele
+                // RSI 35-55 arası VE trend aşağı VE MACD negatif = gerçek aşağı trend
+                const isRealDowntrend = !uTr.pass && uTr.macdHist < 0 && uRsi >= 35 && uRsi <= 55;
                 if(isRealDowntrend){
                   // USDT ve TRY versiyonlarını kara listeye al
                   const baseName = sym.replace('USDT','');
@@ -1750,7 +1759,7 @@ async function startScan(){
 
         // ★ MUM KAPANIŞI KONTROLÜ
         // 1h: son %30 veya ilk %20 | 4h/1d: son %25 veya ilk %15
-        if(tf === '1h' || tf === '4h' || tf === '1d'){
+        if(tf === '4h' || tf === '1d'){
           const openCandle = kd[kd.length-1];
           const candleOpenTime = openCandle[0];
           const candleCloseTime = openCandle[6];
