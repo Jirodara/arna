@@ -391,11 +391,6 @@ body{
         <div class="tb-cell"><div class="tb-label">Trailing SL</div><div class="tb-val" id="tb-tsl" style="color:var(--dn)">—</div></div>
         <div class="tb-cell"><div class="tb-label">TP Hedef</div><div class="tb-val" id="tb-tp" style="color:var(--up)">—</div></div>
       </div>
-      <!-- POZİSYON DURUM ÇUBUĞU — kalıcı analiz sonucu -->
-      <div id="posStatusBar" style="display:none;align-items:center;gap:8px;margin:0 14px 0;padding:8px 12px;border-radius:6px;background:var(--ink3);border-left:3px solid var(--muted);border:1px solid var(--line)">
-        <span style="font-size:13px">⏳</span>
-        <span style="color:var(--muted);font-size:11px">Analiz bekleniyor...</span>
-      </div>
       <!-- CANLI GRAFİK -->
       <div id="liveChartWrap" style="padding:0 14px 10px;display:none">
         <div style="font-size:9px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:1px">Canlı Grafik</div>
@@ -1020,9 +1015,6 @@ window.enterTrade = function(idx){
   startEl();
   startPosCheck(); // Pozisyon değerlendirmesi başlat
   sndSignal();
-  // Pozisyon durum çubuğunu göster
-  const psb = document.getElementById('posStatusBar');
-  if(psb){ psb.style.display='flex'; psb.innerHTML='<span style="font-size:13px">⏳</span><span style="color:var(--muted);font-size:11px">İlk analiz bekleniyor...</span>'; }
   log('✅ GİRİŞ: '+s.displayName+' @ $'+fmtP(s.price)+' | Pos $'+posUSD+' | SL $'+fmtP(initSL),'up');
 
   // Gösterge durumlarını kaydet (öğrenme için)
@@ -1106,14 +1098,11 @@ function closePos(exitPrice,pnl,reason){
   log((pnl>=0?'💰':'⚠️')+' ÇIKIŞ ('+reason+'): '+closedName+' | '+(pnl>=0?'+':'')+pnl.toFixed(2)+'$', pnl>=0?'up':'dn');
   if(elTimer){clearInterval(elTimer);elTimer=null;}
   if(upperTFTimer){clearInterval(upperTFTimer);upperTFTimer=null;}
-  closeWS();
-  stopPosCheck();
-  resetChart();
+  closeWS(); stopPosCheck(); resetChart();
   trade=null;
   startPostTradeTracking(closedSym, closedName, exitPrice, pnl, reason, closedTF, closedEntry);
   document.getElementById('tradeBanner').className='trade-banner';
-  const psb2 = document.getElementById('posStatusBar');
-  if(psb2) psb2.style.display='none';
+  DB.s('trade', null);
   save(); refreshBal(); renderSignals();
   if(pnl>=0) sndWin(); else sndLoss();
 }
@@ -1930,9 +1919,11 @@ function togglePctFilter(){
 
 function toggleAutoScan(){
   autoScanOn = !autoScanOn;
+  DB.s('autoScanOn', autoScanOn);
   const btn = document.getElementById('btnAutoScan');
   if(autoScanOn){
     btn.textContent='🔄 OTO TARA: AÇIK'; btn.className='btn-auto on';
+    if(autoScanTimer) clearInterval(autoScanTimer);
     autoScanTimer = setInterval(()=>{ if(!scanning) startScan(); }, 120000);
     log('🔄 Otomatik tarama açıldı (2dk)','gold');
   } else {
@@ -1944,12 +1935,12 @@ function toggleAutoScan(){
 
 function toggleAutoTrade(){
   autoTradeOn = !autoTradeOn;
+  DB.s('autoTradeOn', autoTradeOn);
   const btn = document.getElementById('btnAutoTrade');
   if(autoTradeOn){
     btn.textContent='🤖 OTO AL/SAT: AÇIK'; btn.className='btn-auto on';
     log('🤖 Otomatik AL/SAT açıldı — sinyal gelince alır, SL/TP ile satar','gold');
     notify('🤖 OTO AL/SAT AÇIK','Sistem otomatik işlem yapıyor');
-    // Şu an sinyal varsa hemen dene
     if(signals.length && !trade) autoEnter();
   } else {
     btn.textContent='🤖 OTO AL/SAT: KAPALI'; btn.className='btn-auto';
@@ -2958,53 +2949,45 @@ async function checkPosition(){
         time:Date.now(), decision, action,
         rsi:rsi.toFixed(0), macdPos:macdPositive, score
       });
+      // Son 20 kararı tut
       if(trade._posCheckDecisions.length>20) trade._posCheckDecisions.shift();
     }
 
     // OTOMATİK EYLEM
-    if(action === 'hold'){
-      // Devam Et — momentum güçlüyse SL ve TP'yi yukarı çek
-      if(score >= 6 && pnlPct > 0.5){
-        // SL'yi mevcut kârın %40'ını koruyacak seviyeye çek
-        const holdSL = trade.entry + (lp - trade.entry) * 0.40;
-        if(holdSL > trade.trailSL){
-          trade.trailSL = holdSL;
-          const tslEl = document.getElementById('tb-tsl');
-          if(tslEl) tslEl.textContent = '$'+fmtP(holdSL);
-          document.getElementById('tbl-sl').textContent = 'SL $'+fmtP(holdSL);
-          log('🟢 Devam Et → SL yukarı çekildi: $'+fmtP(holdSL),'up');
-        }
-      }
-    } else if(action === 'tighten'){
+    if(action === 'tighten'){
       // SL'yi sıkıştır
       const tighterSL = lp * (1 - (trade.trailPct * 0.5)/100);
       if(tighterSL > trade.trailSL){
         trade.trailSL = tighterSL;
-        const tslEl = document.getElementById('tb-tsl');
-        if(tslEl) tslEl.textContent = '$'+fmtP(tighterSL);
-        document.getElementById('tbl-sl').textContent = 'SL $'+fmtP(tighterSL);
         log('⚡ SL sıkıştırıldı: $'+fmtP(tighterSL),'gold');
       }
-    } else if(action === 'exit' && pnlPct > 0.3){
-      // Karda ve çıkış öneriliyorsa otomatik çık
+    } else if(action === 'exit'){
       const pnl = (lp - trade.entry) / trade.entry * trade.posUSD;
-      log('🤖 OTO ÇIKIŞ: Pozisyon analizi → '+decision+' | '+pnl.toFixed(2)+'$','gold');
-      notify('🤖 Pozisyon Analizi', trade.displayName+' → '+decision+' | Kar: $'+pnl.toFixed(2));
-      closePos(lp, pnl, 'ANALYSIS');
-      return;
+      if(pnlPct > 0.3){
+        // Karda → direkt çık
+        log('🤖 OTO ÇIKIŞ (kâr): Pozisyon analizi → '+decision+' | +'+pnl.toFixed(2)+'$','up');
+        notify('🤖 OTO ÇIKIŞ', trade.displayName+' kâr: +$'+pnl.toFixed(2));
+        closePos(lp, pnl, 'ANALYSIS');
+        return;
+      } else if(pnlPct < -0.5){
+        // Zararda ve sinyal bozuksa → çık, daha fazla zarar etme
+        log('🤖 OTO ÇIKIŞ (zarar): Pozisyon analizi → '+decision+' | '+pnl.toFixed(2)+'$','dn');
+        notify('🤖 OTO ÇIKIŞ', trade.displayName+' zarar durduruldu: $'+pnl.toFixed(2));
+        closePos(lp, pnl, 'ANALYSIS_LOSS');
+        return;
+      }
     }
 
-    // ── Banner'da KALICI göster — bir sonraki analize kadar silinmez ──
-    const posStatusEl = document.getElementById('posStatusBar');
-    if(posStatusEl && trade){
-      posStatusEl.style.display = 'flex';
-      posStatusEl.innerHTML =
-        '<span style="font-size:13px">' + icon + '</span>'
-        + '<span style="color:'+color+';font-weight:600;font-size:11px">'+decision+'</span>'
-        + '<span style="color:var(--muted);font-size:9px;margin-left:6px">RSI:'+rsi.toFixed(0)
-        + ' MACD:'+(macdPositive?'↑':'↓')
-        + (reasons.length ? ' · '+reasons[0] : '')+'</span>';
-      posStatusEl.style.borderColor = color;
+    // Banner'da göster
+    const ea = document.getElementById('exitAlert');
+    if(ea && trade){
+      ea.className='exit-alert on';
+      ea.innerHTML = icon+' <strong style="color:'+color+'">'+decision+'</strong>'
+        + '<span style="font-size:9px;opacity:.7;margin-left:8px">RSI:'+rsi.toFixed(0)
+        + ' · MACD:'+(macdPositive?'↑':'↓')
+        + (reasonTxt ? ' · '+reasons.slice(0,2).join(', ') : '')+'</span>';
+      // 2.5 dakika sonra temizle (bir sonraki kontrole kadar)
+      setTimeout(()=>{ if(ea&&trade) ea.className='exit-alert'; }, 150000);
     }
 
   }catch(e){ /* sessiz hata */ }
@@ -3147,42 +3130,70 @@ if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.se
 
 /* ── SAYFA GÖRÜNÜRLÜK ── */
 document.addEventListener('visibilitychange', ()=>{
-  if(!document.hidden && trade){
-    refreshBal();
-    if(trade.livePrice){
-      const lp=trade.livePrice, pnl=(lp-trade.entry)/trade.entry*trade.posUSD, pct=(lp-trade.entry)/trade.entry*100;
-      const col=pnl>=0?'var(--up)':'var(--dn)';
-      const c=document.getElementById('tb-cur'); if(c) c.textContent='$'+fmtP(lp);
-      const p=document.getElementById('tb-pnl'); if(p){p.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'$ ('+pct.toFixed(2)+'%)';p.style.color=col;}
-      const s=document.getElementById('tb-tsl'); if(s) s.textContent='$'+fmtP(trade.trailSL);
-      const t=document.getElementById('tb-tp');  if(t) t.textContent='$'+fmtP(trade.targetTP);
+  if(!document.hidden){
+    if(trade){
+      refreshBal();
+      if(trade.livePrice){
+        const lp=trade.livePrice, pnl=(lp-trade.entry)/trade.entry*trade.posUSD, pct=(lp-trade.entry)/trade.entry*100;
+        const col=pnl>=0?'var(--up)':'var(--dn)';
+        const c=document.getElementById('tb-cur'); if(c) c.textContent='$'+fmtP(lp);
+        const p=document.getElementById('tb-pnl'); if(p){p.textContent=(pnl>=0?'+':'')+pnl.toFixed(2)+'$ ('+pct.toFixed(2)+'%)';p.style.color=col;}
+        const s=document.getElementById('tb-tsl'); if(s) s.textContent='$'+fmtP(trade.trailSL);
+        const t=document.getElementById('tb-tp');  if(t) t.textContent='$'+fmtP(trade.targetTP);
+      }
+      if(!pricePoller && trade.symbol) pollPrice(trade.symbol);
     }
-    if(!pricePoller && trade.symbol) pollPrice(trade.symbol);
-    log('📱 Uygulama aktif — veriler güncellendi','blue');
+    // OTO TARA kapandıysa yeniden başlat
+    if(autoScanOn && !autoScanTimer){
+      autoScanTimer = setInterval(()=>{ if(!scanning) startScan(); }, 120000);
+      log('🔄 OTO TARA yeniden başlatıldı','gold');
+    }
   }
 });
 window.addEventListener('pageshow',(e)=>{
-  if(e.persisted && trade){ refreshBal(); if(!pricePoller && trade.symbol) pollPrice(trade.symbol); }
+  if(e.persisted){
+    if(trade && !pricePoller && trade.symbol) pollPrice(trade.symbol);
+    if(autoScanOn && !autoScanTimer) autoScanTimer = setInterval(()=>{ if(!scanning) startScan(); }, 120000);
+  }
 });
 
 /* ── BAŞLAT ── */
+// Trade restore
 const st=DB.g('trade',null);
-if(st){
+if(st && st.symbol && st.entry){
   trade=st; trade.livePrice=st.entry;
   document.getElementById('tradeBanner').className='trade-banner on';
   document.getElementById('tb-coin').textContent=st.displayName;
-  document.getElementById('tb-entry').textContent='$'+st.entry.toFixed(4);
-  document.getElementById('tb-tsl').textContent='$'+st.trailSL.toFixed(4);
-  document.getElementById('tb-tp').textContent='$'+st.targetTP.toFixed(4);
-  document.getElementById('tbl-sl').textContent='SL $'+st.trailSL.toFixed(2);
-  document.getElementById('tbl-tp').textContent='TP $'+st.targetTP.toFixed(2);
+  document.getElementById('tb-entry').textContent='$'+fmtP(st.entry);
+  document.getElementById('tb-tsl').textContent='$'+fmtP(st.trailSL);
+  document.getElementById('tb-tp').textContent='$'+fmtP(st.targetTP);
+  document.getElementById('tbl-sl').textContent='SL $'+fmtP(st.trailSL);
+  document.getElementById('tbl-tp').textContent='TP $'+fmtP(st.targetTP);
   startEl(); openWS(st.symbol);
   startPosCheck();
   startUpperTFWatch();
-  const psbR = document.getElementById('posStatusBar');
-  if(psbR){ psbR.style.display='flex'; psbR.innerHTML='<span style="font-size:13px">⏳</span><span style="color:var(--muted);font-size:11px">Analiz başlatılıyor...</span>'; }
   log('📂 Açık işlem yüklendi: '+st.displayName,'gold');
 }
+
+// OTO TARA restore
+if(DB.g('autoScanOn', false)){
+  autoScanOn = true;
+  document.getElementById('btnAutoScan').textContent='🔄 OTO TARA: AÇIK';
+  document.getElementById('btnAutoScan').className='btn-auto on';
+  autoScanTimer = setInterval(()=>{ if(!scanning) startScan(); }, 120000);
+  log('🔄 OTO TARA restore edildi','gold');
+  // Hemen bir tarama başlat
+  setTimeout(()=>{ if(!scanning) startScan(); }, 3000);
+}
+
+// OTO AL/SAT restore
+if(DB.g('autoTradeOn', false)){
+  autoTradeOn = true;
+  document.getElementById('btnAutoTrade').textContent='🤖 OTO AL/SAT: AÇIK';
+  document.getElementById('btnAutoTrade').className='btn-auto on';
+  log('🤖 OTO AL/SAT restore edildi','gold');
+}
+
 refreshBal();
 </script>
 </body>
