@@ -2905,8 +2905,17 @@ async function checkPosition(){
     // 5. BOLLINGER
     const boll = calcBoll(closes);
     const bollPct = (lp - boll.dn) / (boll.up - boll.dn + 0.0001);
-    const nearUpperBand = bollPct > 0.85; // Üst banda çok yakın
+    const nearUpperBand = bollPct > 0.85;
     const aboveMid      = bollPct > 0.5;
+
+    // 6. VWAP — Hacim Ağırlıklı Ortalama Fiyat
+    // Her mum için tipik fiyat × hacim toplamı ÷ toplam hacim
+    const vwapData = klines.slice(-20); // Son 20 mum
+    const vwapNum = vwapData.reduce((sum,k)=>sum + ((k.h+k.l+k.c)/3) * k.v, 0);
+    const vwapDen = vwapData.reduce((sum,k)=>sum + k.v, 0);
+    const vwap = vwapDen > 0 ? vwapNum / vwapDen : lp;
+    const aboveVWAP = lp > vwap;
+    const vwapDiff = ((lp - vwap) / vwap * 100).toFixed(2);
 
     // KARAR MANTĞI
     let score = 0;
@@ -2918,6 +2927,7 @@ async function checkPosition(){
     if(rsiOk)              { score += 2; }
     if(macdPositive)       { score += 2; }
     if(aboveMid)           { score += 1; }
+    if(aboveVWAP)          { score += 2; reasons.push('VWAP üstü'); }
 
     // Negatif sinyaller
     if(redCount >= 4)      { score -= 3; reasons.push('mumlar kırmızı'); }
@@ -2927,6 +2937,7 @@ async function checkPosition(){
     if(rsiWeak)            { score -= 2; reasons.push('RSI zayıf'); }
     if(macdDivergence)     { score -= 2; reasons.push('MACD zayıflıyor'); }
     if(nearUpperBand)      { score -= 2; reasons.push('üst banda dayandı'); }
+    if(!aboveVWAP)         { score -= 2; reasons.push('VWAP altı'); }
 
     // Karda olma bonusu — kardaysa daha uzun tut
     if(pnlPct > 1.5)  score += 1;
@@ -2973,7 +2984,7 @@ async function checkPosition(){
       posBar.style.background = action==='hold'?'rgba(34,197,94,0.06)':action==='tighten'?'rgba(240,180,41,0.06)':'rgba(239,68,68,0.06)';
       if(posIcon) posIcon.textContent = icon;
       if(posDecision){ posDecision.textContent = decision; posDecision.style.color = color; }
-      if(posDetail) posDetail.textContent = 'RSI:'+rsi.toFixed(0)+' · MACD:'+(macdPositive?'↑':'↓')+(reasons.length?' · '+reasons[0]:'');
+      if(posDetail) posDetail.textContent = 'Skor:'+score+' · RSI:'+rsi.toFixed(0)+' · MACD:'+(macdPositive?'↑':'↓')+' · VWAP:'+(aboveVWAP?'↑+':'↓')+vwapDiff+'%'+(reasons.length?' · '+reasons[0]:'');
       if(posTime) posTime.textContent = new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
     }
 
