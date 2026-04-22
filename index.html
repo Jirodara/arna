@@ -2882,17 +2882,14 @@ let posCheckTimer = null;
 function startPosCheck(){
   if(posCheckTimer) clearInterval(posCheckTimer);
   if(!trade) return;
-  // Tüm TF'ler için 1 dakikada bir analiz
   const interval = 60000;
-  const firstCheck = 15000; // İlk kontrol 15sn sonra
-  setTimeout(()=>{
-    checkPosition();
-    posCheckTimer = setInterval(checkPosition, interval);
-  }, firstCheck);
-  log('📊 Pozisyon takibi başladı (1dk aralık)','blue');
-  // Analiz kutusunu göster
+  // Analiz kutusunu hemen göster
   const bar = document.getElementById('posAnalysisBar');
-  if(bar) bar.style.display='block';
+  if(bar){ bar.style.display='block'; }
+  // İlk kontrol hemen başlasın
+  checkPosition();
+  posCheckTimer = setInterval(checkPosition, interval);
+  log('📊 Pozisyon takibi başladı (1dk aralık)','blue');
 }
 
 function stopPosCheck(){
@@ -3007,8 +3004,12 @@ async function checkPosition(){
     }
 
     const reasonTxt = reasons.length ? ' · '+reasons.slice(0,2).join(', ') : '';
-    const logMsg = icon+' Pozisyon: '+decision+' (skor:'+score+') RSI:'+rsi.toFixed(0)+' MACD:'+(macdPositive?'↑':'↓')+reasonTxt;
-    log(logMsg, action==='hold'?'up':action==='tighten'?'gold':'dn');
+    // Sadece karar değişince log at — sistem günlüğü dolmasın
+    const lastDecision = trade._posCheckDecisions?.slice(-1)[0]?.decision;
+    if(lastDecision !== decision){
+      const logMsg = icon+' Pozisyon: '+decision+' (skor:'+score+') RSI:'+rsi.toFixed(0)+' MACD:'+(macdPositive?'↑':'↓')+reasonTxt;
+      log(logMsg, action==='hold'?'up':action==='tighten'?'gold':'dn');
+    }
     if(trade){
       if(!trade._posCheckDecisions) trade._posCheckDecisions=[];
       trade._posCheckDecisions.push({time:Date.now(),decision,action,rsi:rsi.toFixed(0),macdPos:macdPositive,score});
