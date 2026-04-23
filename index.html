@@ -331,6 +331,55 @@ body{
 </head>
 <body>
 
+<!-- API KEY MODAL -->
+<div id="apiModal" style="display:none;position:fixed;inset:0;background:rgba(1,4,9,0.97);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <div style="width:100%;max-width:380px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:32px;font-weight:900;color:var(--gold);letter-spacing:2px;font-family:'Bebas Neue',sans-serif">ARNA</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">Hybrid Scanner — Gerçek İşlem Modu</div>
+    </div>
+
+    <!-- MOD SEÇİMİ -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+      <button id="btnDemoMode" onclick="setMode('demo')" style="padding:12px;border-radius:8px;border:2px solid var(--gold);background:rgba(240,180,41,0.1);color:var(--gold);font-weight:700;font-size:13px;cursor:pointer">
+        🎮 DEMO MOD<br><small style="font-weight:400;opacity:.7">$2000 sanal bakiye</small>
+      </button>
+      <button id="btnLiveMode" onclick="setMode('live')" style="padding:12px;border-radius:8px;border:2px solid var(--line);background:var(--ink3);color:var(--muted);font-weight:700;font-size:13px;cursor:pointer">
+        💰 GERÇEK MOD<br><small style="font-weight:400;opacity:.7">Binance API ile</small>
+      </button>
+    </div>
+
+    <!-- API FORM -->
+    <div id="apiForm" style="display:none">
+      <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="font-size:11px;color:var(--dn);font-weight:600;margin-bottom:4px">⚠️ GÜVENLİK UYARISI</div>
+        <div style="font-size:10px;color:var(--dim);line-height:1.5">API key'in yalnızca bu cihazda saklanır. Binance'de <strong style="color:var(--text)">sadece Spot Trading</strong> iznini ver. Para çekme iznini ASLA verme.</div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">API Key</div>
+        <input id="inputApiKey" type="password" placeholder="Binance API Key..." style="width:100%;padding:11px 14px;background:var(--ink3);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Mono',monospace">
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">API Secret</div>
+        <input id="inputApiSecret" type="password" placeholder="Binance API Secret..." style="width:100%;padding:11px 14px;background:var(--ink3);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:13px;font-family:'DM Mono',monospace">
+      </div>
+      <button onclick="saveApiKeys()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;border-radius:10px;color:#000;font-weight:800;font-size:15px;cursor:pointer;margin-bottom:10px">
+        🔐 Bağlan ve Başlat
+      </button>
+      <button onclick="setMode('demo')" style="width:100%;padding:10px;background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer">
+        Demo moda geç
+      </button>
+    </div>
+
+    <!-- DEMO DEVAM -->
+    <div id="demoContinue" style="display:none">
+      <button onclick="startDemo()" style="width:100%;padding:14px;background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;border-radius:10px;color:#000;font-weight:800;font-size:15px;cursor:pointer">
+        🎮 Demo ile Başlat
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- HEADER -->
 <div class="hdr">
   <div class="brand">
@@ -346,7 +395,7 @@ body{
 <!-- BALANS BAR -->
 <div class="bal-bar">
   <div class="bal-item">
-    <div class="bal-l">Demo</div>
+    <div class="bal-l" id="balModeLabel">Demo</div>
     <div class="bal-v" id="b-bal" style="color:var(--gold)">$2,000</div>
   </div>
   <div class="bal-item">
@@ -572,6 +621,159 @@ body{
    
    Göstergeler filtre, sinyal değil.
 ═══════════════════════════════════════════════════ */
+
+/* ── MOD SİSTEMİ ── */
+let isLiveMode = false;
+let apiKey = '';
+let apiSecret = '';
+const COMMISSION_RATE = 0.001; // %0.1 Binance spot komisyon
+
+function setMode(mode){
+  const apiForm = document.getElementById('apiForm');
+  const demoContinue = document.getElementById('demoContinue');
+  const btnDemo = document.getElementById('btnDemoMode');
+  const btnLive = document.getElementById('btnLiveMode');
+  if(mode === 'live'){
+    apiForm.style.display = 'block';
+    demoContinue.style.display = 'none';
+    btnLive.style.borderColor = 'var(--gold)';
+    btnLive.style.color = 'var(--gold)';
+    btnLive.style.background = 'rgba(240,180,41,0.1)';
+    btnDemo.style.borderColor = 'var(--line)';
+    btnDemo.style.color = 'var(--muted)';
+    btnDemo.style.background = 'var(--ink3)';
+  } else {
+    apiForm.style.display = 'none';
+    demoContinue.style.display = 'block';
+    btnDemo.style.borderColor = 'var(--gold)';
+    btnDemo.style.color = 'var(--gold)';
+    btnDemo.style.background = 'rgba(240,180,41,0.1)';
+    btnLive.style.borderColor = 'var(--line)';
+    btnLive.style.color = 'var(--muted)';
+    btnLive.style.background = 'var(--ink3)';
+  }
+}
+
+function saveApiKeys(){
+  const key = document.getElementById('inputApiKey').value.trim();
+  const secret = document.getElementById('inputApiSecret').value.trim();
+  if(!key || !secret){ alert('API Key ve Secret giriniz!'); return; }
+  if(key.length < 20 || secret.length < 20){ alert('Geçersiz API Key/Secret formatı'); return; }
+  // localStorage'a kaydet — GitHub'a gitmez
+  localStorage.setItem('arna_api_key', key);
+  localStorage.setItem('arna_api_secret', secret);
+  apiKey = key; apiSecret = secret; isLiveMode = true;
+  startApp(true);
+}
+
+function startDemo(){
+  isLiveMode = false; apiKey = ''; apiSecret = '';
+  localStorage.removeItem('arna_api_key');
+  localStorage.removeItem('arna_api_secret');
+  startApp(false);
+}
+
+function startApp(live){
+  document.getElementById('apiModal').style.display = 'none';
+  isLiveMode = live;
+  DB.s('liveMode', live);
+  const label = document.getElementById('balModeLabel');
+  if(label) label.textContent = live ? '💰 Gerçek' : 'Demo';
+  if(live){
+    log('💰 GERÇEK MOD — Binance Spot bağlandı','up');
+    syncRealBalance();
+  } else {
+    log('🎮 Demo mod başlatıldı','gold');
+  }
+  refreshBal();
+}
+
+/* ── HMAC-SHA256 İMZALAMA ── */
+async function hmacSHA256(secret, message){
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(sig)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+/* ── BİNANCE İMZALI İSTEK ── */
+async function binanceSigned(method, path, params={}){
+  if(!apiKey || !apiSecret) throw new Error('API key yok');
+  params.timestamp = Date.now();
+  params.recvWindow = 5000;
+  const query = Object.entries(params).map(([k,v])=>k+'='+v).join('&');
+  const signature = await hmacSHA256(apiSecret, query);
+  const fullQuery = query + '&signature=' + signature;
+  const url = 'https://api.binance.com/api/v3' + path + (method==='GET'?'?'+fullQuery:'');
+  const opts = {
+    method,
+    headers: { 'X-MBX-APIKEY': apiKey, 'Content-Type': 'application/x-www-form-urlencoded' }
+  };
+  if(method !== 'GET') opts.body = fullQuery;
+  const r = await fetch(url, opts);
+  const data = await r.json();
+  if(data.code && data.code < 0) throw new Error('Binance: '+data.msg+' ('+data.code+')');
+  return data;
+}
+
+/* ── GERÇEK BAKİYE SYNC ── */
+async function syncRealBalance(){
+  if(!isLiveMode) return;
+  try{
+    const account = await binanceSigned('GET', '/account');
+    const usdt = account.balances?.find(b=>b.asset==='USDT');
+    if(usdt){
+      const free = parseFloat(usdt.free);
+      demoBal = free;
+      document.getElementById('b-bal').textContent='$'+free.toFixed(2);
+      log('💰 Gerçek bakiye: $'+free.toFixed(2)+' USDT','up');
+    }
+  }catch(e){
+    log('⚠️ Bakiye çekilemedi: '+e.message,'gold');
+  }
+}
+
+/* ── GERÇEK MARKET ORDER ── */
+async function placeMarketBuy(symbol, quoteOrderQty){
+  if(!isLiveMode) return null;
+  try{
+    log('📤 Emir gönderiliyor: BUY '+symbol+' $'+quoteOrderQty.toFixed(2),'blue');
+    const order = await binanceSigned('POST', '/order', {
+      symbol,
+      side: 'BUY',
+      type: 'MARKET',
+      quoteOrderQty: quoteOrderQty.toFixed(2) // USDT cinsinden miktar
+    });
+    log('✅ Emir onaylandı: '+symbol+' | '+order.executedQty+' adet @ $'+(parseFloat(order.cummulativeQuoteQty)/parseFloat(order.executedQty)).toFixed(4),'up');
+    return order;
+  }catch(e){
+    log('❌ Emir hatası: '+e.message,'dn');
+    return null;
+  }
+}
+
+async function placeMarketSell(symbol, quantity){
+  if(!isLiveMode) return null;
+  try{
+    // Miktarı Binance lot size'a göre yuvarla
+    const qty = parseFloat(quantity.toPrecision(6));
+    log('📤 Satış emri: SELL '+symbol+' '+qty,'blue');
+    const order = await binanceSigned('POST', '/order', {
+      symbol,
+      side: 'SELL',
+      type: 'MARKET',
+      quantity: qty
+    });
+    log('✅ Satış onaylandı: '+symbol+' | $'+(parseFloat(order.cummulativeQuoteQty)).toFixed(2),'up');
+    return order;
+  }catch(e){
+    log('❌ Satış hatası: '+e.message,'dn');
+    return null;
+  }
+}
+
+/* ── KOMİSYON HESAPLAMA ── */
+function calcCommission(usd){ return usd * COMMISSION_RATE; }
 
 // Binance API — çoklu endpoint + CORS proxy fallback
 const API_ENDPOINTS = [
@@ -832,58 +1034,108 @@ function setLive(ok){
 let alCD = {};
 let pricePoller = null;
 
-function openWS(sym){
-  // WebSocket yerine REST polling — daha güvenilir
-  closeWS();
-  setLive(false);
-  pollPrice(sym);
-}
-
-function closeWS(){
-  if(ws){try{ws.close();}catch(e){} ws=null;}
-  if(pricePoller){clearInterval(pricePoller); pricePoller=null;}
-  setLive(false);
-}
-
 // Momentum takibi için son fiyatlar
 const momentumPrices = [];
-const MOMENTUM_SIZE = 20; // Son 20 fiyat = 1 dakika (3sn polling)
+const MOMENTUM_SIZE = 20;
+
+// Çoklu pozisyon için her coin'in poller'ı ayrı
+const posPollers = {}; // {symbol: timeoutId}
 
 async function pollPrice(sym){
+  // Ana trade (positions[0]) için ana poller
   if(!trade || trade.symbol !== sym) return;
   if(document.hidden){ pricePoller = setTimeout(()=>pollPrice(sym), 5000); return; }
+  await fetchAndUpdatePrice(sym, true);
+  if(trade && trade.symbol === sym){
+    pricePoller = setTimeout(()=>pollPrice(sym), 3000);
+  }
+}
+
+// Arka plan pozisyonları için ayrı poller
+async function pollPositionPrice(sym){
+  const pos = positions.find(p=>p.symbol===sym);
+  if(!pos){ delete posPollers[sym]; return; }
+  if(document.hidden){ posPollers[sym]=setTimeout(()=>pollPositionPrice(sym),8000); return; }
+  await fetchAndUpdatePrice(sym, false);
+  if(positions.find(p=>p.symbol===sym)){
+    posPollers[sym] = setTimeout(()=>pollPositionPrice(sym), 5000);
+  } else {
+    delete posPollers[sym];
+  }
+}
+
+async function fetchAndUpdatePrice(sym, isMain){
   const endpoints = [
     'https://data-api.binance.vision/api/v3/ticker/price?symbol=',
     'https://api.binance.com/api/v3/ticker/price?symbol=',
     'https://api1.binance.com/api/v3/ticker/price?symbol=',
   ];
-  let success = false;
   for(const ep of endpoints){
     try{
       const r = await fetch(ep + sym);
       if(r.ok){
         const d = await r.json();
         const price = parseFloat(d.price);
-        if(price && trade && trade.symbol === sym){
-          trade.livePrice = price;
-          // Momentum takibine ekle
+        if(!price) continue;
+        // İlgili pozisyonu güncelle
+        const pos = positions.find(p=>p.symbol===sym);
+        if(pos){
+          pos.livePrice = price;
+          // SL kontrolü — tüm pozisyonlar için
+          if(price <= pos.trailSL){
+            const pnl=(price-pos.entry)/pos.entry*pos.posUSD;
+            log('🔴 SL: '+pos.displayName+' @ $'+fmtP(price)+' | '+pnl.toFixed(2)+'$','dn');
+            notify('🔴 SL!', pos.displayName+' zarar: $'+pnl.toFixed(2));
+            // Aktif trade ise normal closePos, değilse direkt kapat
+            if(trade && trade.id===pos.id){
+              sndAlarm(); closePos(price,pnl,'SL');
+            } else {
+              // Arka plan pozisyon SL kırıldı
+              const savedTrade = trade;
+              trade = pos;
+              sndAlarm(); closePos(price,pnl,'SL');
+              trade = savedTrade;
+            }
+            return;
+          }
+          // updateTrail — tüm pozisyonlar için
+          const newSL = price*(1-pos.trailPct/100);
+          if(newSL > pos.trailSL) pos.trailSL = newSL;
+        }
+        if(isMain && trade && trade.symbol===sym){
           momentumPrices.push(price);
           if(momentumPrices.length > MOMENTUM_SIZE) momentumPrices.shift();
           setLive(true);
-          updateTrail(price);
           updateTradePNL();
-          checkMomentumExit(price); // Momentum çıkış kontrolü
+          checkMomentumExit(price);
           checkExit();
-          success = true;
-          break;
         }
+        refreshBal(); // Tüm pozisyonların toplam P&L güncelle
+        return;
       }
     }catch(e){ continue; }
   }
-  if(!success) setLive(false);
-  if(trade && trade.symbol === sym){
-    pricePoller = setTimeout(()=>pollPrice(sym), 3000);
-  }
+  if(isMain) setLive(false);
+}
+
+function openWS(sym){
+  closeWS();
+  setLive(false);
+  pollPrice(sym);
+  // Diğer pozisyonlar için arka plan pollerlar başlat
+  positions.forEach(p=>{
+    if(p.symbol !== sym && !posPollers[p.symbol]){
+      posPollers[p.symbol] = setTimeout(()=>pollPositionPrice(p.symbol), 2000);
+    }
+  });
+}
+
+function closeWS(){
+  if(ws){try{ws.close();}catch(e){} ws=null;}
+  if(pricePoller){clearTimeout(pricePoller); pricePoller=null;}
+  // Arka plan pollerları da durdur
+  Object.keys(posPollers).forEach(sym=>{ clearTimeout(posPollers[sym]); delete posPollers[sym]; });
+  setLive(false);
 }
 
 // Momentum çıkış sistemi
@@ -1082,15 +1334,35 @@ window.acceptNewTP = function(newTP){
   alCD.tp=0;
 };
 
-function closePos(exitPrice,pnl,reason){
+async function closePos(exitPrice,pnl,reason){
   if(!trade) return;
   const cp=Object.assign({},trade);
+
+  // Gerçek modda önce satış emri gönder
+  if(cp.isLive && isLiveMode && cp.coinQty > 0){
+    const sellOrder = await placeMarketSell(cp.symbol, cp.coinQty);
+    if(sellOrder){
+      const actualReceived = parseFloat(sellOrder.cummulativeQuoteQty);
+      const exitCommission = calcCommission(actualReceived);
+      exitPrice = actualReceived / cp.coinQty;
+      pnl = actualReceived - cp.grossUSD - (cp.commission||0) - exitCommission;
+      log('💰 Gerçek çıkış: $'+actualReceived.toFixed(2)+' | Toplam Kom: $'+((cp.commission||0)+exitCommission).toFixed(2),'up');
+    }
+  } else if(!cp.isLive){
+    // Demo: çıkış komisyonu düş
+    const exitCommission = calcCommission(exitPrice * (cp.coinQty||cp.posUSD/cp.entry));
+    pnl -= exitCommission;
+  }
+
   const result=pnl>=0?'win':'lose';
-  demoBal+=cp.posUSD+pnl; demoPnL+=pnl;
+  if(isLiveMode){ await syncRealBalance(); }
+  else { demoBal+=cp.posUSD+pnl; }
+  demoPnL+=pnl;
+
   const rec=history.find(h=>h.id===cp.id);
   if(rec){rec.result=result;rec.pnl=pnl;rec.exitPrice=exitPrice;rec.exitTime=Date.now();rec.exitReason=reason;rec._posCheckDecisions=cp._posCheckDecisions||[];}
   recordTrade(result,{trendPass:cp._trendPass||false,rsiOk:cp._rsiOk||false,volOk:cp._volOk||false,bollOk:cp._bollOk||false,pnlPct:(pnl/cp.posUSD)*100,tf:cp.tf||'?'});
-  log((pnl>=0?'💰':'⚠️')+' ÇIKIŞ ('+reason+'): '+cp.displayName+' | '+(pnl>=0?'+':'')+pnl.toFixed(2)+'$',pnl>=0?'up':'dn');
+  log((pnl>=0?'💰':'⚠️')+' ÇIKIŞ ('+reason+')'+(cp.isLive?' 💰':' 🎮')+': '+cp.displayName+' | '+(pnl>=0?'+':'')+pnl.toFixed(2)+'$',pnl>=0?'up':'dn');
   if(elTimer){clearInterval(elTimer);elTimer=null;}
   if(upperTFTimer){clearInterval(upperTFTimer);upperTFTimer=null;}
   closeWS(); stopPosCheck(); resetChart();
@@ -2099,41 +2371,66 @@ function doAutoEnter(signal){
   enterTradeWithSignal(signal);
 }
 
-function enterTradeWithSignal(s){
+async function enterTradeWithSignal(s){
   if(!canOpenPosition()) return;
   if(!s||!s.symbol||!s.price) return;
   if(positions.find(p=>p.symbol===s.symbol)) return;
-  const posUSD   = calcPosUSD(parseFloat(document.getElementById('p-pos').value)||400);
+
+  const requestedUSD = parseFloat(document.getElementById('p-pos').value)||400;
+  const posUSD = isLiveMode ? Math.min(requestedUSD, demoBal*0.95) : calcPosUSD(requestedUSD);
   if(posUSD<10){ log('❌ Yetersiz bakiye: $'+demoBal.toFixed(2),'dn'); return; }
+
+  const commission = calcCommission(posUSD); // Giriş komisyonu
+  const effectiveUSD = posUSD - commission;  // Komisyon düşülmüş gerçek pozisyon
+
   const trailPct = parseFloat(document.getElementById('p-trail').value)||1.5;
   const tpPct    = s.score>=90?4.0:s.score>=85?3.0:s.score>=75?2.0:1.5;
   const trailSL  = s.price*(1-trailPct/100);
   const swingDiff= s.swingLow?(s.price-s.swingLow)/s.price*100:999;
   const initSL   = (s.swingLow&&swingDiff<=3)?Math.max(s.swingLow,trailSL):trailSL;
+
+  // Gerçek modda önce emir gönder
+  let actualEntry = s.price;
+  let coinQty = 0;
+  if(isLiveMode){
+    const order = await placeMarketBuy(s.symbol, posUSD);
+    if(!order){ log('❌ Emir gönderilemedi — giriş iptal','dn'); return; }
+    coinQty = parseFloat(order.executedQty);
+    actualEntry = parseFloat(order.cummulativeQuoteQty) / coinQty;
+    log('💰 Gerçek giriş fiyatı: $'+fmtP(actualEntry)+' | '+coinQty+' adet','up');
+    await syncRealBalance(); // Bakiyeyi güncelle
+  }
+
   const pos = {
     id:Date.now(), symbol:s.symbol, displayName:s.displayName,
-    entry:s.price, livePrice:s.price, entryTime:Date.now(), posUSD,
+    entry:actualEntry, livePrice:actualEntry, entryTime:Date.now(),
+    posUSD:effectiveUSD, grossUSD:posUSD, commission,
+    coinQty: isLiveMode ? coinQty : effectiveUSD/actualEntry,
     trailPct, trailSL:initSL, initSL,
-    targetTP:s.price*(1+tpPct/100), tpPct,
+    targetTP:actualEntry*(1+tpPct/100), tpPct,
     score:s.score, verdict:s.verdict, tf:s.tf||'1h',
     _trendPass:s.trend?.pass||false, _rsiOk:s.rsi?.pass||false,
     _volOk:s.vol?.pass||false, _bollOk:s.boll?.pass||false,
+    isLive: isLiveMode,
   };
+
   if(!addPosition(pos)){ log('❌ Pozisyon eklenemedi','dn'); return; }
-  demoBal -= posUSD; save();
-  // Banner — her zaman ilk pozisyonu göster
+  if(!isLiveMode){ demoBal -= posUSD; } // Demo'da bakiyeyi düş
+  save();
+
   trade = positions[0];
   document.getElementById('tradeBanner').className='trade-banner on';
   document.getElementById('tb-coin').textContent=positions.length>1?positions.map(p=>p.displayName).join(' + '):s.displayName;
-  document.getElementById('tb-entry').textContent='$'+fmtP(s.price);
+  document.getElementById('tb-entry').textContent='$'+fmtP(actualEntry);
   document.getElementById('tb-tsl').textContent='$'+fmtP(initSL);
-  document.getElementById('tb-tp').textContent='$'+fmtP(s.price*(1+tpPct/100));
+  document.getElementById('tb-tp').textContent='$'+fmtP(actualEntry*(1+tpPct/100));
   document.getElementById('tbl-sl').textContent='SL $'+fmtP(initSL);
-  document.getElementById('tbl-tp').textContent='TP $'+fmtP(s.price*(1+tpPct/100));
-  const pb=document.getElementById('posAnalysisBar');if(pb){pb.style.display='block';}
+  document.getElementById('tbl-tp').textContent='TP $'+fmtP(actualEntry*(1+tpPct/100));
+  const pb=document.getElementById('posAnalysisBar');if(pb) pb.style.display='block';
   resetChart(); openWS(s.symbol); startEl(); startPosCheck(); startUpperTFWatch(); sndSignal();
   const posNum=positions.length>1?' ['+positions.length+'/'+MAX_POSITIONS+']':'';
-  log('✅ GİRİŞ: '+s.displayName+' @ $'+fmtP(s.price)+' | $'+posUSD.toFixed(0)+' | SL $'+fmtP(initSL)+posNum,'up');
+  const commStr = commission>0?' | Kom: $'+commission.toFixed(2):'';
+  log('✅ GİRİŞ'+(isLiveMode?' 💰':' 🎮')+': '+s.displayName+' @ $'+fmtP(actualEntry)+' | $'+posUSD.toFixed(0)+commStr+' | SL $'+fmtP(initSL)+posNum,'up');
   history.unshift({...pos,result:'open',pnl:null,exitPrice:null,exitTime:null});
   save(); renderSignals(); refreshBal();
 }
@@ -3052,13 +3349,19 @@ async function checkPosition(){
     } else if(action === 'exit'){
       const pnl = (lp - trade.entry) / trade.entry * trade.posUSD;
       if(pnlPct > 0.3){
+        // Sadece karda çıkar — zararda SL halleder
         log('🤖 OTO ÇIKIŞ (kâr): '+decision+' | +'+pnl.toFixed(2)+'$','up');
         notify('🤖 OTO ÇIKIŞ', trade.displayName+' kâr: +$'+pnl.toFixed(2));
         closePos(lp, pnl, 'ANALYSIS'); return;
-      } else if(pnlPct < -0.5){
-        log('🤖 OTO ÇIKIŞ (zarar): '+decision+' | '+pnl.toFixed(2)+'$','dn');
-        notify('🤖 OTO ÇIKIŞ', trade.displayName+' zarar durduruldu: $'+pnl.toFixed(2));
-        closePos(lp, pnl, 'ANALYSIS_LOSS'); return;
+      }
+      // Zararda ise sadece SL'yi sıkıştır, çıkma
+      else if(pnlPct < -0.3){
+        const tighterSL = lp * (1 - (trade.trailPct * 0.3)/100);
+        if(tighterSL > trade.trailSL){
+          trade.trailSL = tighterSL;
+          const tslEl=document.getElementById('tb-tsl'); if(tslEl) tslEl.textContent='$'+fmtP(tighterSL);
+          log('⚡ Zayıf sinyal → SL sıkıştırıldı: $'+fmtP(tighterSL),'gold');
+        }
       }
     }
 
@@ -3241,53 +3544,107 @@ window.addEventListener('pageshow',(e)=>{
 });
 
 /* ── BAŞLAT ── */
-// Positions restore
-const savedPos=DB.g('positions',null);
-if(savedPos&&Array.isArray(savedPos)&&savedPos.length>0){
-  positions=savedPos; syncTrade();
-  if(trade){
-    document.getElementById('tradeBanner').className='trade-banner on';
-    document.getElementById('tb-coin').textContent=positions.length>1?positions.map(p=>p.displayName).join(' + '):trade.displayName;
-    document.getElementById('tb-entry').textContent='$'+fmtP(trade.entry);
-    document.getElementById('tb-tsl').textContent='$'+fmtP(trade.trailSL);
-    document.getElementById('tb-tp').textContent='$'+fmtP(trade.targetTP);
-    document.getElementById('tbl-sl').textContent='SL $'+fmtP(trade.trailSL);
-    document.getElementById('tbl-tp').textContent='TP $'+fmtP(trade.targetTP);
-    const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
-    startEl(); openWS(trade.symbol); startPosCheck(); startUpperTFWatch();
-    log('📂 '+positions.length+' pozisyon yüklendi: '+positions.map(p=>p.displayName).join(', '),'gold');
+
+// API modal göster — her zaman açılışta sor
+(function initApp(){
+  const modal = document.getElementById('apiModal');
+
+  // Kayıtlı API key var mı?
+  const savedKey = localStorage.getItem('arna_api_key');
+  const savedSecret = localStorage.getItem('arna_api_secret');
+  const savedLive = DB.g('liveMode', false);
+
+  if(savedKey && savedSecret && savedLive){
+    // Gerçek mod — otomatik bağlan
+    apiKey = savedKey; apiSecret = savedSecret;
+    isLiveMode = true;
+    modal.style.display = 'none';
+    const label = document.getElementById('balModeLabel');
+    if(label) label.textContent = '💰 Gerçek';
+    log('💰 GERÇEK MOD yüklendi — Binance Spot','up');
+    syncRealBalance();
+  } else if(DB.g('liveMode', null) === false){
+    // Demo mod kaydedilmiş — direkt başlat
+    isLiveMode = false;
+    modal.style.display = 'none';
+    log('🎮 Demo mod başlatıldı','gold');
+  } else {
+    // İlk açılış — modal göster
+    modal.style.display = 'flex';
+    setMode('demo'); // Varsayılan demo seçili
+    return; // Restore işlemini modal kapanınca yap
   }
-} else {
-  const st=DB.g('trade',null);
-  if(st&&st.symbol&&st.entry){
-    positions=[{...st}]; syncTrade();
-    document.getElementById('tradeBanner').className='trade-banner on';
-    document.getElementById('tb-coin').textContent=st.displayName;
-    document.getElementById('tb-entry').textContent='$'+fmtP(st.entry);
-    document.getElementById('tb-tsl').textContent='$'+fmtP(st.trailSL);
-    document.getElementById('tb-tp').textContent='$'+fmtP(st.targetTP);
-    document.getElementById('tbl-sl').textContent='SL $'+fmtP(st.trailSL);
-    document.getElementById('tbl-tp').textContent='TP $'+fmtP(st.targetTP);
-    const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
-    startEl(); openWS(st.symbol); startPosCheck(); startUpperTFWatch();
-    log('📂 Açık işlem yüklendi: '+st.displayName,'gold');
+
+  restorePositions();
+})();
+
+function restorePositions(){
+  // Positions restore
+  const savedPos=DB.g('positions',null);
+  if(savedPos&&Array.isArray(savedPos)&&savedPos.length>0){
+    positions=savedPos; syncTrade();
+    if(trade){
+      document.getElementById('tradeBanner').className='trade-banner on';
+      document.getElementById('tb-coin').textContent=positions.length>1?positions.map(p=>p.displayName).join(' + '):trade.displayName;
+      document.getElementById('tb-entry').textContent='$'+fmtP(trade.entry);
+      document.getElementById('tb-tsl').textContent='$'+fmtP(trade.trailSL);
+      document.getElementById('tb-tp').textContent='$'+fmtP(trade.targetTP);
+      document.getElementById('tbl-sl').textContent='SL $'+fmtP(trade.trailSL);
+      document.getElementById('tbl-tp').textContent='TP $'+fmtP(trade.targetTP);
+      const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
+      startEl(); openWS(trade.symbol); startPosCheck(); startUpperTFWatch();
+      log('📂 '+positions.length+' pozisyon yüklendi: '+positions.map(p=>p.displayName).join(', '),'gold');
+    }
+  } else {
+    const st=DB.g('trade',null);
+    if(st&&st.symbol&&st.entry){
+      positions=[{...st}]; syncTrade();
+      document.getElementById('tradeBanner').className='trade-banner on';
+      document.getElementById('tb-coin').textContent=st.displayName;
+      document.getElementById('tb-entry').textContent='$'+fmtP(st.entry);
+      document.getElementById('tb-tsl').textContent='$'+fmtP(st.trailSL);
+      document.getElementById('tb-tp').textContent='$'+fmtP(st.targetTP);
+      document.getElementById('tbl-sl').textContent='SL $'+fmtP(st.trailSL);
+      document.getElementById('tbl-tp').textContent='TP $'+fmtP(st.targetTP);
+      const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
+      startEl(); openWS(st.symbol); startPosCheck(); startUpperTFWatch();
+      log('📂 Açık işlem yüklendi: '+st.displayName,'gold');
+    }
+  }
+  if(DB.g('autoScanOn',false)){
+    autoScanOn=true;
+    document.getElementById('btnAutoScan').textContent='🔄 OTO TARA: AÇIK';
+    document.getElementById('btnAutoScan').className='btn-auto on';
+    autoScanTimer=setInterval(()=>{if(!scanning)startScan();},120000);
+    log('🔄 OTO TARA restore edildi','gold');
+    setTimeout(()=>{if(!scanning)startScan();},3000);
+  }
+  if(DB.g('autoTradeOn',false)){
+    autoTradeOn=true;
+    document.getElementById('btnAutoTrade').textContent='🤖 OTO AL/SAT: AÇIK';
+    document.getElementById('btnAutoTrade').className='btn-auto on';
+    log('🤖 OTO AL/SAT restore edildi','gold');
+  }
+  refreshBal();
+}
+
+// startApp'ı güncelle — restorePositions çağırsın
+const _origStartApp = startApp;
+function startApp(live){
+  isLiveMode = live;
+  DB.s('liveMode', live);
+  const label = document.getElementById('balModeLabel');
+  if(label) label.textContent = live ? '💰 Gerçek' : 'Demo';
+  document.getElementById('apiModal').style.display = 'none';
+  if(live){
+    log('💰 GERÇEK MOD — Binance Spot bağlandı','up');
+    syncRealBalance().then(()=>{ restorePositions(); refreshBal(); });
+  } else {
+    log('🎮 Demo mod başlatıldı','gold');
+    restorePositions();
+    refreshBal();
   }
 }
-if(DB.g('autoScanOn',false)){
-  autoScanOn=true;
-  document.getElementById('btnAutoScan').textContent='🔄 OTO TARA: AÇIK';
-  document.getElementById('btnAutoScan').className='btn-auto on';
-  autoScanTimer=setInterval(()=>{if(!scanning)startScan();},120000);
-  log('🔄 OTO TARA restore edildi','gold');
-  setTimeout(()=>{if(!scanning)startScan();},3000);
-}
-if(DB.g('autoTradeOn',false)){
-  autoTradeOn=true;
-  document.getElementById('btnAutoTrade').textContent='🤖 OTO AL/SAT: AÇIK';
-  document.getElementById('btnAutoTrade').className='btn-auto on';
-  log('🤖 OTO AL/SAT restore edildi','gold');
-}
-refreshBal();
 </script>
 </body>
 </html>
