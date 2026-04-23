@@ -387,6 +387,8 @@ body{
     <span class="brand-tag">Hybrid Scanner</span>
   </div>
   <div class="hdr-right">
+    <!-- MOD TOGGLE -->
+    <button id="modToggleBtn" onclick="requestModeSwitch()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(240,180,41,.4);background:rgba(240,180,41,.08);color:var(--gold);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.5px">🎮 DEMO</button>
     <div class="live-badge" id="liveBadge"><div class="live-dot"></div><span id="liveTxt">OFF</span></div>
     <span class="clk" id="clk">--:--:--</span>
   </div>
@@ -488,22 +490,22 @@ body{
       <div class="params" id="pctFilterFields">
         <div class="p-group">
           <label>Min Yükseliş %</label>
-          <input type="number" id="p-min" value="3" step="0.5" min="1" max="15">
+          <input type="number" id="p-min" value="3" step="0.5" min="1" max="15" onchange="saveParams()">
         </div>
         <div class="p-group">
           <label>Max Yükseliş %</label>
-          <input type="number" id="p-max" value="5" step="0.5" min="2" max="25">
+          <input type="number" id="p-max" value="5" step="0.5" min="2" max="25" onchange="saveParams()">
         </div>
       </div>
       <!-- Diğer parametreler her zaman görünür -->
       <div class="params">
         <div class="p-group">
           <label>Min Skor</label>
-          <input type="number" id="p-score" value="80" step="5" min="50" max="95">
+          <input type="number" id="p-score" value="80" step="5" min="50" max="95" onchange="saveParams()">
         </div>
         <div class="p-group">
           <label>Zaman Dilimi</label>
-          <select id="p-tf">
+          <select id="p-tf" onchange="saveParams()">
             <option value="1m">1 Dakika</option>
             <option value="3m">3 Dakika</option>
             <option value="5m">5 Dakika</option>
@@ -516,11 +518,11 @@ body{
         </div>
         <div class="p-group">
           <label>Trailing Stop %</label>
-          <input type="number" id="p-trail" value="1.5" step="0.1" min="0.5" max="5">
+          <input type="number" id="p-trail" value="1.5" step="0.1" min="0.5" max="5" onchange="saveParams()">
         </div>
         <div class="p-group">
           <label>Pozisyon $</label>
-          <input type="number" id="p-pos" value="400" step="100" min="100" max="2000">
+          <input type="number" id="p-pos" value="400" step="100" min="100" max="2000" onchange="saveParams()">
         </div>
       </div>
       <div class="scan-actions">
@@ -622,7 +624,88 @@ body{
    Göstergeler filtre, sinyal değil.
 ═══════════════════════════════════════════════════ */
 
-/* ── MOD SİSTEMİ ── */
+/* ── MOD TOGGLE ── */
+function updateModBtn(){
+  const btn = document.getElementById('modToggleBtn');
+  const label = document.getElementById('balModeLabel');
+  if(!btn) return;
+  if(isLiveMode){
+    btn.textContent = '💰 GERÇEK';
+    btn.style.borderColor = 'rgba(34,197,94,.4)';
+    btn.style.background = 'rgba(34,197,94,.08)';
+    btn.style.color = 'var(--up)';
+    if(label) label.textContent = '💰 Gerçek';
+  } else {
+    btn.textContent = '🎮 DEMO';
+    btn.style.borderColor = 'rgba(240,180,41,.4)';
+    btn.style.background = 'rgba(240,180,41,.08)';
+    btn.style.color = 'var(--gold)';
+    if(label) label.textContent = 'Demo';
+  }
+}
+
+function requestModeSwitch(){
+  // İşlem veya tarama varsa uyar
+  if(trade){
+    alert('Açık işlem var! Önce işlemi kapat, sonra mod değiştir.');
+    return;
+  }
+  if(scanning){
+    alert('Tarama devam ediyor. Bitince tekrar dene.');
+    return;
+  }
+  if(autoScanOn || autoTradeOn){
+    if(!confirm('OTO TARA / OTO AL/SAT açık. Mod değiştirince kapanacak. Devam edilsin mi?')) return;
+    // Oto sistemleri kapat
+    if(autoScanOn) toggleAutoScan();
+    if(autoTradeOn) toggleAutoTrade();
+  }
+
+  if(isLiveMode){
+    // Gerçek → Demo
+    // Mevcut gerçek geçmişi kaydet
+    DB.s('history_live', history);
+    // Demo geçmişini yükle
+    history = DB.g('history_demo', []);
+    demoBal = DB.g('bal_demo', 2000);
+    demoPnL = DB.g('pnl_demo', 0);
+    isLiveMode = false;
+    DB.s('liveMode', false);
+    log('🎮 Demo moda geçildi','gold');
+  } else {
+    // Demo → Gerçek
+    if(!localStorage.getItem('arna_api_key')){
+      // API key yok — modal aç
+      document.getElementById('apiModal').style.display = 'flex';
+      setMode('live');
+      return;
+    }
+    // Demo geçmişini kaydet
+    DB.s('history_demo', history);
+    DB.s('bal_demo', demoBal);
+    DB.s('pnl_demo', demoPnL);
+    // Gerçek geçmişini yükle
+    history = DB.g('history_live', []);
+    isLiveMode = true;
+    DB.s('liveMode', true);
+    apiKey = localStorage.getItem('arna_api_key');
+    apiSecret = localStorage.getItem('arna_api_secret');
+    log('💰 Gerçek moda geçildi','up');
+    syncRealBalance();
+  }
+  updateModBtn();
+  refreshBal();
+  renderHistory();
+}
+
+/* ── GEÇMİŞ KAYIT — mod bazlı ── */
+function saveHistory(){
+  if(isLiveMode){
+    DB.s('history_live', history.slice(-200));
+  } else {
+    DB.s('history_demo', history.slice(-200));
+  }
+}
 let isLiveMode = false;
 let apiKey = '';
 let apiSecret = '';
@@ -686,6 +769,54 @@ function startApp(live){
     log('🎮 Demo mod başlatıldı','gold');
   }
   refreshBal();
+}
+
+/* ── PARAMETRE KAYDET/YÜKLE ── */
+function saveParams(){
+  DB.s('params', {
+    tf:    document.getElementById('p-tf').value,
+    score: document.getElementById('p-score').value,
+    trail: document.getElementById('p-trail').value,
+    pos:   document.getElementById('p-pos').value,
+    pMin:  document.getElementById('p-min').value,
+    pMax:  document.getElementById('p-max').value,
+    pctFilterOn
+  });
+}
+
+function loadParams(){
+  const p = DB.g('params', null);
+  if(!p) return;
+  if(p.tf)    document.getElementById('p-tf').value    = p.tf;
+  if(p.score) document.getElementById('p-score').value = p.score;
+  if(p.trail) document.getElementById('p-trail').value = p.trail;
+  if(p.pos)   document.getElementById('p-pos').value   = p.pos;
+  if(p.pMin)  document.getElementById('p-min').value   = p.pMin;
+  if(p.pMax)  document.getElementById('p-max').value   = p.pMax;
+  if(p.pctFilterOn !== undefined && p.pctFilterOn !== pctFilterOn){
+    togglePctFilter();
+  }
+}
+
+/* ── LOG KAYDET/YÜKLE ── */
+const MAX_LOG = 50;
+function saveLog(msg, cls){
+  const logs = DB.g('logs', []);
+  logs.push({msg, cls, time: new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})});
+  if(logs.length > MAX_LOG) logs.shift();
+  DB.s('logs', logs);
+}
+
+function loadLogs(){
+  const logs = DB.g('logs', []);
+  const list = document.getElementById('logList');
+  if(!list || !logs.length) return;
+  logs.forEach(l=>{
+    const li = document.createElement('li');
+    li.className = 'log-item'+(l.cls?' '+l.cls:'');
+    li.innerHTML = '<span class="log-time">'+l.time+'</span><span class="log-msg">'+l.msg+'</span>';
+    list.appendChild(li);
+  });
 }
 
 /* ── HMAC-SHA256 İMZALAMA ── */
@@ -889,11 +1020,22 @@ demoBal = DB.g('bal', DEMO);
 demoPnL = DB.g('pnl', 0);
 
 function save(){
-  DB.s('hist', history.slice(-200));
+  if(isLiveMode){
+    DB.s('history_live', history.slice(-200));
+  } else {
+    DB.s('history_demo', history.slice(-200));
+  }
   DB.s('trade', trade||null);
   DB.s('positions', positions||[]);
   DB.s('bal', demoBal);
   DB.s('pnl', demoPnL);
+  if(isLiveMode){
+    DB.s('bal_live', demoBal);
+    DB.s('pnl_live', demoPnL);
+  } else {
+    DB.s('bal_demo', demoBal);
+    DB.s('pnl_demo', demoPnL);
+  }
 }
 
 /* ── SAAT ── */
@@ -992,6 +1134,8 @@ function log(msg,cls){
   const l = document.getElementById('logList');
   l.insertBefore(li, l.firstChild);
   while(l.children.length>80) l.removeChild(l.lastChild);
+  // Logu kaydet
+  saveLog(msg, cls);
 }
 
 /* ── TAB ── */
@@ -2213,6 +2357,7 @@ function togglePctFilter(){
   const btn=document.getElementById('btnPctFilter'),fields=document.getElementById('pctFilterFields'),desc=document.getElementById('pctFilterDesc');
   if(pctFilterOn){btn.textContent='AÇIK';btn.style.borderColor='rgba(240,180,41,.4)';btn.style.color='var(--gold)';fields.style.display='grid';desc.textContent='Min/Max yükseliş aktif';}
   else{btn.textContent='KAPALI';btn.style.borderColor='rgba(100,116,139,.4)';btn.style.color='var(--muted)';fields.style.display='none';desc.textContent='Tüm coinler taranıyor';}
+  saveParams();
 }
 
 function toggleAutoScan(){
@@ -2607,16 +2752,31 @@ window.updateTP=function(){
 /* ── GEÇMİŞ ── */
 function renderHistory(){
   const a=document.getElementById('histArea');
-  if(!history.length){ a.innerHTML='<div class="empty"><strong>📋</strong>Henüz kayıt yok.</div>'; return; }
 
-  const closed=history.filter(h=>h.result==='win'||h.result==='lose');
-  const open=history.filter(h=>h.result==='open');
+  // Her iki modun geçmişini birleştir — mod etiketi ile
+  const demoHistory = DB.g('history_demo', []).map(h=>({...h, _mode:'demo'}));
+  const liveHistory = DB.g('history_live', []).map(h=>({...h, _mode:'live'}));
+  const allHistory = [...history.map(h=>({...h, _mode:isLiveMode?'live':'demo'})), 
+    ...(isLiveMode ? demoHistory : liveHistory)]
+    .filter((h,i,arr)=>arr.findIndex(x=>x.id===h.id)===i) // tekrar olmasın
+    .sort((a,b)=>(b.exitTime||b.id)-(a.exitTime||a.id));
+
+  if(!allHistory.length){ a.innerHTML='<div class="empty"><strong>📋</strong>Henüz kayıt yok.</div>'; return; }
+
+  const closed=allHistory.filter(h=>h.result==='win'||h.result==='lose');
+  const open=allHistory.filter(h=>h.result==='open');
   const wins=closed.filter(h=>h.result==='win').length;
   const loses=closed.filter(h=>h.result==='lose').length;
   const totalPnL=closed.reduce((s,h)=>s+(h.pnl||0),0);
   const wr=closed.length?Math.round(wins/closed.length*100):0;
 
-  // Saat bazlı analiz — hangi saatlerde zarar
+  // Demo vs Gerçek istatistik
+  const demoWins = closed.filter(h=>h._mode==='demo'&&h.result==='win').length;
+  const demoLoses = closed.filter(h=>h._mode==='demo'&&h.result==='lose').length;
+  const liveWins = closed.filter(h=>h._mode==='live'&&h.result==='win').length;
+  const liveLoses = closed.filter(h=>h._mode==='live'&&h.result==='lose').length;
+
+  // Saat bazlı analiz
   const loseByHour={};
   const winByHour={};
   closed.forEach(h=>{
@@ -2672,6 +2832,18 @@ function renderHistory(){
         <div style="font-family:'DM Mono',monospace;font-size:20px;font-weight:700;color:var(--dn)">${loses}</div>
       </div>
     </div>
+    <!-- DEMO vs GERÇEK KARŞILAŞTIRMA -->
+    ${(demoWins+demoLoses > 0 || liveWins+liveLoses > 0) ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="background:rgba(240,180,41,.06);border-radius:8px;padding:10px;border:1px solid rgba(240,180,41,.2)">
+        <div style="font-size:8px;color:var(--gold);margin-bottom:6px;font-weight:600">🎮 DEMO</div>
+        <div style="font-size:11px;color:var(--text)">${demoWins+demoLoses} işlem · ${demoWins+demoLoses>0?Math.round(demoWins/(demoWins+demoLoses)*100):0}% başarı</div>
+      </div>
+      <div style="background:rgba(34,197,94,.06);border-radius:8px;padding:10px;border:1px solid rgba(34,197,94,.2)">
+        <div style="font-size:8px;color:var(--up);margin-bottom:6px;font-weight:600">💰 GERÇEK</div>
+        <div style="font-size:11px;color:var(--text)">${liveWins+liveLoses} işlem · ${liveWins+liveLoses>0?Math.round(liveWins/(liveWins+liveLoses)*100):0}% başarı</div>
+      </div>
+    </div>` : ''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div style="background:var(--ink2);border-radius:8px;padding:10px;border:1px solid var(--line)">
         <div style="font-size:8px;color:var(--muted);margin-bottom:4px">BAŞARI ORANI</div>
@@ -2731,16 +2903,17 @@ function renderHistory(){
   <!-- İŞLEM LİSTESİ -->
   <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px">Tüm İşlemler</div>
   ${open.length?`<div style="padding:8px 12px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;margin-bottom:8px;font-size:11px;color:var(--blue)">● ${open.length} açık işlem devam ediyor</div>`:''}
-  ${history.slice(0,80).map(h=>{
+  ${allHistory.slice(0,100).map(h=>{
     const cls=h.result==='win'?'win':h.result==='lose'?'lose':'open';
     const lbl=h.result==='win'?'💰 KAR':h.result==='lose'?'⚠️ ZARAR':h.result==='open'?'● AÇIK':'—';
     const pnlTxt=h.pnl!=null?(h.pnl>=0?'+':'')+h.pnl.toFixed(2)+'$':'—';
     const dur=h.exitTime&&h.entryTime?Math.floor((h.exitTime-h.entryTime)/60000)+'dk':'—';
     const pnlPct=h.pnl&&h.posUSD?((h.pnl/h.posUSD)*100).toFixed(1)+'%':'';
     const exitR=h.exitReason?(' · '+h.exitReason):'';
+    const modTag=h._mode==='live'?'<span style="color:var(--up);font-size:8px;font-weight:700">💰 GERÇEK</span>':'<span style="color:var(--gold);font-size:8px">🎮 DEMO</span>';
     return `<div class="hist-item" style="margin-bottom:8px">
       <div class="hi-top">
-        <div class="hi-coin">${h.displayName||h.symbol?.replace('USDT','')}</div>
+        <div class="hi-coin">${h.displayName||h.symbol?.replace('USDT','')} ${modTag}</div>
         <div class="hi-pnl ${cls}">${lbl} ${pnlTxt}</div>
       </div>
       <div class="hi-row">
@@ -3545,6 +3718,10 @@ window.addEventListener('pageshow',(e)=>{
 
 /* ── BAŞLAT ── */
 
+// Parametreleri ve logları yükle
+loadParams();
+loadLogs();
+
 // API modal göster — her zaman açılışta sor
 (function initApp(){
   const modal = document.getElementById('apiModal');
@@ -3626,9 +3803,9 @@ function restorePositions(){
     log('🤖 OTO AL/SAT restore edildi','gold');
   }
   refreshBal();
+  updateModBtn();
 }
-
-// startApp'ı güncelle — restorePositions çağırsın
+// startApp - restorePositions çağırır
 const _origStartApp = startApp;
 function startApp(live){
   isLiveMode = live;
