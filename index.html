@@ -612,6 +612,166 @@ body{
 <script>
 'use strict';
 
+/* ── BOT API BAĞLANTISI ──
+   Sunucudaki Python botu ile haberleşir.
+   Bot çalışıyorsa tüm işlemler bot üzerinden yapılır.
+   Bot yoksa tarayıcı modu devam eder.
+*/
+const BOT_API = 'http://178.104.236.187:8765';
+let botConnected = false;
+let botSyncTimer = null;
+
+async function checkBotConnection(){
+  try {
+    const r = await fetch(BOT_API + '/state', {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000)
+    });
+    if(r.ok){
+      if(!botConnected){
+        botConnected = true;
+        log('🤖 Bot bağlandı — sunucu modu aktif', 'up');
+        updateBotIndicator(true);
+        startBotSync();
+      }
+      return true;
+    }
+  } catch(e) {
+    if(botConnected){
+      botConnected = false;
+      log('⚠️ Bot bağlantısı kesildi — tarayıcı modu', 'gold');
+      updateBotIndicator(false);
+    }
+  }
+  return false;
+}
+
+function updateBotIndicator(connected){
+  const btn = document.getElementById('modToggleBtn');
+  if(!btn) return;
+  if(connected){
+    btn.style.boxShadow = '0 0 8px rgba(34,197,94,0.5)';
+    btn.title = 'Sunucu botu aktif — 7/24 çalışıyor';
+  } else {
+    btn.style.boxShadow = '';
+    btn.title = 'Tarayıcı modu';
+  }
+}
+
+async function sendBotCommand(action, data={}){
+  if(!botConnected) return false;
+  try {
+    const r = await fetch(BOT_API, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action, ...data}),
+      signal: AbortSignal.timeout(5000)
+    });
+    return r.ok;
+  } catch(e) {
+    return false;
+  }
+}
+
+async function syncFromBot(){
+  if(!botConnected) return;
+  try {
+    const r = await fetch(BOT_API + '/state', {signal: AbortSignal.timeout(3000)});
+    if(!r.ok) return;
+    const botState = await r.json();
+
+    // Bakiye güncelle
+    if(botState.demo_bal !== undefined){
+      demoBal = botState.demo_bal;
+      demoPnL = botState.demo_pnl || 0;
+    }
+
+    // Pozisyonları güncelle
+    if(botState.positions && botState.positions.length > 0){
+      const botPos = botState.positions[0];
+      if(!trade || trade.symbol !== botPos.symbol){
+        // Bot yeni pozisyon açmış
+        positions = botState.positions;
+        syncTrade();
+        if(trade){
+          document.getElementById('tradeBanner').className='trade-banner on';
+          document.getElementById('tb-coin').textContent = trade.display || trade.displayName || trade.symbol;
+          document.getElementById('tb-entry').textContent = '$'+fmtP(trade.entry);
+          document.getElementById('tb-tsl').textContent = '$'+fmtP(trade.trail_sl || trade.trailSL);
+          document.getElementById('tb-tp').textContent = '$'+fmtP(trade.target_tp || trade.targetTP);
+          log('🤖 Bot pozisyon açtı: '+(trade.display||trade.symbol), 'up');
+        }
+      } else if(trade){
+        // Mevcut pozisyonu güncelle
+        trade.livePrice = botPos.live_price;
+        trade.trailSL = botPos.trail_sl;
+        trade.targetTP = botPos.target_tp;
+        updateTradePNL();
+      }
+    } else if(trade && botState.positions && botState.positions.length === 0){
+      // Bot pozisyonu kapattı
+      if(positions.length > 0){
+        log('🤖 Bot pozisyonu kapattı', 'gold');
+        positions = [];
+        trade = null;
+        document.getElementById('tradeBanner').className='trade-banner';
+        const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='none';
+      }
+    }
+
+    // Sinyalleri güncelle
+    if(botState.signals && botState.signals.length > 0){
+      // Bot sinyallerini mevcut sinyal formatına çevir
+      const botSignals = botState.signals.map(s => ({
+        symbol: s.symbol,
+        displayName: s.display,
+        price: s.price,
+        score: s.score,
+        rsi: {rsi: s.rsi},
+        change: s.change,
+        volume: s.volume,
+        tf: s.tf,
+        scannedAt: s.scanned_at,
+        verdict: 'BUY',
+        _fromBot: true
+      }));
+      if(botSignals.length > 0 && signals.length === 0){
+        signals = botSignals;
+        renderSignals();
+      }
+    }
+
+    // Bot loglarını göster
+    if(botState.logs && botState.logs.length > 0){
+      // Sadece yeni logları ekle
+      const lastLog = botState.logs[0];
+      if(lastLog && lastLog.msg){
+        const existing = document.querySelector('.log-li .log-m');
+        if(!existing || !existing.textContent.includes(lastLog.msg.substring(0,20))){
+          // log fonksiyonu zaten kayıt yapıyor, direkt DOM'a ekleyelim
+        }
+      }
+    }
+
+    refreshBal();
+  } catch(e) {
+    botConnected = false;
+    updateBotIndicator(false);
+  }
+}
+
+function startBotSync(){
+  if(botSyncTimer) clearInterval(botSyncTimer);
+  botSyncTimer = setInterval(syncFromBot, 3000); // 3sn'de bir senkronize et
+  syncFromBot(); // Hemen bir kez çalıştır
+}
+
+// Sayfa açılınca bot bağlantısını kontrol et
+setTimeout(()=>{
+  checkBotConnection();
+  setInterval(checkBotConnection, 30000); // 30sn'de bir kontrol et
+}, 2000);
+
 /* ═══════════════════════════════════════════════════
    ARNA — Hybrid Hedge-Fund Scanner v2
    
@@ -2043,6 +2203,25 @@ function applyLearning(score, tr, rsi, bol, vol){
 ═══════════════════════════════ */
 async function startScan(){
   if(scanning) return;
+
+  // Bot bağlıysa bota tarama komutu gönder
+  if(botConnected){
+    const config = {
+      tf: document.getElementById('p-tf').value || '5m',
+      min_score: parseInt(document.getElementById('p-score').value)||80,
+      pos_usd: parseFloat(document.getElementById('p-pos').value)||400,
+      trail_pct: parseFloat(document.getElementById('p-trail').value)||1.5
+    };
+    await sendBotCommand('set_config', {config});
+    await sendBotCommand('scan');
+    log('🤖 Bot tarama başlatıldı', 'blue');
+    // Sonuçları 10sn sonra çek
+    setTimeout(syncFromBot, 10000);
+    setTimeout(syncFromBot, 30000);
+    setTimeout(syncFromBot, 60000);
+    return;
+  }
+
   scanning=true;
   document.getElementById('btnScan').disabled=true;
   document.getElementById('btnScan').textContent='Taranıyor...';
@@ -2368,10 +2547,13 @@ function toggleAutoScan(){
     if(autoScanTimer) clearInterval(autoScanTimer);
     autoScanTimer=setInterval(()=>{ if(!scanning) startScan(); },120000);
     log('🔄 Otomatik tarama açıldı (2dk)','gold');
+    // Bot varsa bota da bildir
+    if(botConnected) sendBotCommand('set_auto_scan', {value: true});
   } else {
     btn.textContent='🔄 OTO TARA'; btn.className='btn-auto';
     if(autoScanTimer){clearInterval(autoScanTimer);autoScanTimer=null;}
     log('🔄 Otomatik tarama durduruldu','gold');
+    if(botConnected) sendBotCommand('set_auto_scan', {value: false});
   }
 }
 
@@ -2383,9 +2565,11 @@ function toggleAutoTrade(){
     log('🤖 Otomatik AL/SAT açıldı','gold');
     notify('🤖 OTO AL/SAT AÇIK','Sistem otomatik işlem yapıyor');
     if(signals.length&&!trade) autoEnter();
+    if(botConnected) sendBotCommand('set_auto_trade', {value: true});
   } else {
     btn.textContent='🤖 OTO AL/SAT: KAPALI'; btn.className='btn-auto';
     log('🤖 Otomatik AL/SAT durduruldu','gold');
+    if(botConnected) sendBotCommand('set_auto_trade', {value: false});
   }
 }
 
