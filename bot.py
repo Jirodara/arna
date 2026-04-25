@@ -1239,7 +1239,7 @@ class APIHandler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
 
     def do_GET(self):
-        if self.path == '/state':
+        if self.path in ('/state', '/api/state', '/api'):
             with state_lock:
                 data = json.dumps(_state, ensure_ascii=False).encode('utf-8')
             self.send_response(200)
@@ -1261,6 +1261,8 @@ class APIHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global _state, _config
+        if self.path not in ('/', '/api', '/state'):
+            self.send_response(404); self.end_headers(); return
         length = int(self.headers.get('Content-Length', 0))
         body   = self.rfile.read(length)
         try:
