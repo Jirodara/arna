@@ -612,6 +612,97 @@ body{
 <script>
 'use strict';
 
+/* ── BOT BAĞLANTISI ── */
+const BOT = 'http://178.104.236.187:8765';
+let botOK = false;
+let _botSyncTimer = null;
+let _lastBotLog = '';
+
+async function botPost(action, data){
+  try{
+    const r = await fetch(BOT, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action,...data}),
+      signal: AbortSignal.timeout(4000)
+    });
+    return r.ok;
+  }catch(e){ return false; }
+}
+
+async function botSync(){
+  try{
+    const r = await fetch(BOT+'/state', {signal: AbortSignal.timeout(3000)});
+    if(!r.ok){ botOK=false; return; }
+    const s = await r.json();
+    if(!botOK){
+      botOK=true;
+      log('🤖 Bot bağlandı — sunucu 7/24 aktif','up');
+    }
+    // Bakiye
+    if(s.demo_bal !== undefined && !trade){
+      demoBal = s.demo_bal;
+      demoPnL = s.demo_pnl||0;
+      refreshBal();
+    }
+    // Bot logları — sadece yenileri
+    if(s.logs && s.logs.length > 0){
+      const newest = s.logs[0];
+      const key = newest.time+newest.msg;
+      if(key !== _lastBotLog){
+        _lastBotLog = key;
+        // Bot logu sistem günlüğüne ekle
+        const t = newest.time;
+        const li = document.createElement('li');
+        li.className='log-li';
+        li.innerHTML=`<span class="log-t">${t}</span><span class="log-m ${newest.cls||''}">${newest.msg}</span>`;
+        const l = document.getElementById('logList');
+        if(l){ l.insertBefore(li, l.firstChild); while(l.children.length>80) l.removeChild(l.lastChild); }
+      }
+    }
+    // Bot pozisyonu — trade yoksa botu izle
+    if(s.positions && s.positions.length > 0 && !trade){
+      const bp = s.positions[0];
+      // Bot pozisyonunu banner'a yansıt
+      document.getElementById('tradeBanner').className='trade-banner on';
+      document.getElementById('tb-coin').textContent = bp.display_name||bp.symbol;
+      document.getElementById('tb-entry').textContent = '$'+(bp.entry||0).toFixed(4);
+      document.getElementById('tb-tsl').textContent = '$'+(bp.trail_sl||0).toFixed(4);
+      document.getElementById('tb-tp').textContent = '$'+(bp.target_tp||0).toFixed(4);
+      document.getElementById('tbl-sl').textContent = 'SL $'+(bp.trail_sl||0).toFixed(4);
+      document.getElementById('tbl-tp').textContent = 'TP $'+(bp.target_tp||0).toFixed(4);
+      document.getElementById('b-pos').textContent = bp.display_name||bp.symbol;
+      document.getElementById('b-pos').style.color = 'var(--gold)';
+    } else if(s.positions && s.positions.length === 0 && !trade){
+      document.getElementById('tradeBanner').className='trade-banner';
+    }
+    // Bot sinyalleri — index.html'de sinyal yoksa botu kullan
+    if(s.signals && s.signals.length > 0 && signals.length === 0){
+      signals = s.signals.map(sig=>({
+        symbol: sig.symbol,
+        displayName: sig.display_name||sig.symbol.replace('USDT',''),
+        price: sig.price, score: sig.score,
+        change: sig.change, volume: sig.volume,
+        tf: sig.tf, verdict: sig.verdict||'BUY',
+        rsi: {rsi: sig.rsi||50},
+        trend:{pass:sig.trend_pass}, vol:{pass:sig.vol_ok},
+        boll:{pass:sig.boll_ok}, targetTP: sig.target_tp,
+        tpPct: sig.tp_pct, scannedAt: sig.scanned_at,
+        _fromBot: true
+      }));
+      document.getElementById('b-sig').textContent = signals.length;
+      document.getElementById('b-sig').style.color = 'var(--up)';
+      renderSignals();
+    }
+  }catch(e){ botOK=false; }
+}
+
+// Bot bağlantısını başlat
+setTimeout(()=>{
+  botSync();
+  _botSyncTimer = setInterval(botSync, 3000);
+}, 1500);
+
 /* ═══════════════════════════════════════════════════
    ARNA — Hybrid Hedge-Fund Scanner v2
    
@@ -2368,10 +2459,12 @@ function toggleAutoScan(){
     if(autoScanTimer) clearInterval(autoScanTimer);
     autoScanTimer=setInterval(()=>{ if(!scanning) startScan(); },120000);
     log('🔄 Otomatik tarama açıldı (2dk)','gold');
+    if(botOK) botPost('set_auto_scan',{value:true});
   } else {
     btn.textContent='🔄 OTO TARA'; btn.className='btn-auto';
     if(autoScanTimer){clearInterval(autoScanTimer);autoScanTimer=null;}
     log('🔄 Otomatik tarama durduruldu','gold');
+    if(botOK) botPost('set_auto_scan',{value:false});
   }
 }
 
@@ -2383,9 +2476,11 @@ function toggleAutoTrade(){
     log('🤖 Otomatik AL/SAT açıldı','gold');
     notify('🤖 OTO AL/SAT AÇIK','Sistem otomatik işlem yapıyor');
     if(signals.length&&!trade) autoEnter();
+    if(botOK) botPost('set_auto_trade',{value:true});
   } else {
     btn.textContent='🤖 OTO AL/SAT: KAPALI'; btn.className='btn-auto';
     log('🤖 Otomatik AL/SAT durduruldu','gold');
+    if(botOK) botPost('set_auto_trade',{value:false});
   }
 }
 
