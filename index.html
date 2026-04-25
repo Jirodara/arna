@@ -390,6 +390,7 @@ body{
     <!-- MOD TOGGLE -->
     <button id="modToggleBtn" onclick="requestModeSwitch()" style="padding:4px 10px;border-radius:6px;border:1px solid rgba(240,180,41,.4);background:rgba(240,180,41,.08);color:var(--gold);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.5px">🎮 DEMO</button>
     <div class="live-badge" id="liveBadge"><div class="live-dot"></div><span id="liveTxt">OFF</span></div>
+    <div id="serverBadge" style="font-size:9px;font-weight:600;letter-spacing:.5px;padding:3px 7px;border-radius:4px;border:1px solid rgba(100,116,139,.3);color:var(--muted);cursor:pointer" onclick="syncOnWake()">🖥️ OFFLİNE</div>
     <span class="clk" id="clk">--:--:--</span>
   </div>
 </div>
@@ -611,97 +612,6 @@ body{
 
 <script>
 'use strict';
-
-/* ── BOT BAĞLANTISI ── */
-const BOT = 'http://178.104.236.187:8765';
-let botOK = false;
-let _botSyncTimer = null;
-let _lastBotLog = '';
-
-async function botPost(action, data){
-  try{
-    const r = await fetch(BOT, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action,...data}),
-      signal: AbortSignal.timeout(4000)
-    });
-    return r.ok;
-  }catch(e){ return false; }
-}
-
-async function botSync(){
-  try{
-    const r = await fetch(BOT+'/state', {signal: AbortSignal.timeout(3000)});
-    if(!r.ok){ botOK=false; return; }
-    const s = await r.json();
-    if(!botOK){
-      botOK=true;
-      log('🤖 Bot bağlandı — sunucu 7/24 aktif','up');
-    }
-    // Bakiye
-    if(s.demo_bal !== undefined && !trade){
-      demoBal = s.demo_bal;
-      demoPnL = s.demo_pnl||0;
-      refreshBal();
-    }
-    // Bot logları — sadece yenileri
-    if(s.logs && s.logs.length > 0){
-      const newest = s.logs[0];
-      const key = newest.time+newest.msg;
-      if(key !== _lastBotLog){
-        _lastBotLog = key;
-        // Bot logu sistem günlüğüne ekle
-        const t = newest.time;
-        const li = document.createElement('li');
-        li.className='log-li';
-        li.innerHTML=`<span class="log-t">${t}</span><span class="log-m ${newest.cls||''}">${newest.msg}</span>`;
-        const l = document.getElementById('logList');
-        if(l){ l.insertBefore(li, l.firstChild); while(l.children.length>80) l.removeChild(l.lastChild); }
-      }
-    }
-    // Bot pozisyonu — trade yoksa botu izle
-    if(s.positions && s.positions.length > 0 && !trade){
-      const bp = s.positions[0];
-      // Bot pozisyonunu banner'a yansıt
-      document.getElementById('tradeBanner').className='trade-banner on';
-      document.getElementById('tb-coin').textContent = bp.display_name||bp.symbol;
-      document.getElementById('tb-entry').textContent = '$'+(bp.entry||0).toFixed(4);
-      document.getElementById('tb-tsl').textContent = '$'+(bp.trail_sl||0).toFixed(4);
-      document.getElementById('tb-tp').textContent = '$'+(bp.target_tp||0).toFixed(4);
-      document.getElementById('tbl-sl').textContent = 'SL $'+(bp.trail_sl||0).toFixed(4);
-      document.getElementById('tbl-tp').textContent = 'TP $'+(bp.target_tp||0).toFixed(4);
-      document.getElementById('b-pos').textContent = bp.display_name||bp.symbol;
-      document.getElementById('b-pos').style.color = 'var(--gold)';
-    } else if(s.positions && s.positions.length === 0 && !trade){
-      document.getElementById('tradeBanner').className='trade-banner';
-    }
-    // Bot sinyalleri — index.html'de sinyal yoksa botu kullan
-    if(s.signals && s.signals.length > 0 && signals.length === 0){
-      signals = s.signals.map(sig=>({
-        symbol: sig.symbol,
-        displayName: sig.display_name||sig.symbol.replace('USDT',''),
-        price: sig.price, score: sig.score,
-        change: sig.change, volume: sig.volume,
-        tf: sig.tf, verdict: sig.verdict||'BUY',
-        rsi: {rsi: sig.rsi||50},
-        trend:{pass:sig.trend_pass}, vol:{pass:sig.vol_ok},
-        boll:{pass:sig.boll_ok}, targetTP: sig.target_tp,
-        tpPct: sig.tp_pct, scannedAt: sig.scanned_at,
-        _fromBot: true
-      }));
-      document.getElementById('b-sig').textContent = signals.length;
-      document.getElementById('b-sig').style.color = 'var(--up)';
-      renderSignals();
-    }
-  }catch(e){ botOK=false; }
-}
-
-// Bot bağlantısını başlat
-setTimeout(()=>{
-  botSync();
-  _botSyncTimer = setInterval(botSync, 3000);
-}, 1500);
 
 /* ═══════════════════════════════════════════════════
    ARNA — Hybrid Hedge-Fund Scanner v2
@@ -1054,6 +964,399 @@ async function apiFetch(path, _timeout){
 
 
 const DEMO = 2000;
+
+/* ══════════════════════════════════════════════════
+   SUNUCU BAĞLANTISI — 7/24 mod
+   Telefon kapansa bile sunucu çalışır.
+   Telefon açılınca sunucudan güncel state çeker.
+══════════════════════════════════════════════════ */
+
+const SERVER_URL = 'http://178.104.236.187:8765';
+let serverOnline = false;
+let lastServerSync = 0;
+let offlineActivities = []; // Telefon kapalıyken yapılanlar
+
+// Sunucu durumunu göster
+function setServerBadge(ok){
+  serverOnline = ok;
+  const el = document.getElementById('serverBadge');
+  if(!el) return;
+  el.textContent = ok ? '🖥️ SUNUCU' : '🖥️ OFFLİNE';
+  el.style.color  = ok ? 'var(--up)' : 'var(--muted)';
+  el.style.borderColor = ok ? 'rgba(34,197,94,.4)' : 'rgba(100,116,139,.3)';
+}
+
+// Sunucudan state çek
+async function fetchServerState(){
+  try{
+    const r = await fetch(SERVER_URL + '/state', {timeout: 5000});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const srv = await r.json();
+    setServerBadge(true);
+    lastServerSync = Date.now();
+    return srv;
+  }catch(e){
+    setServerBadge(false);
+    return null;
+  }
+}
+
+// Sunucuya komut gönder
+async function sendServer(action, extra={}){
+  try{
+    const r = await fetch(SERVER_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({action, ...extra})
+    });
+    return r.ok;
+  }catch(e){
+    return false;
+  }
+}
+
+// Telefon açılınca: sunucudan state al, "kapalıyken ne oldu" hesapla
+async function syncOnWake(){
+  const srv = await fetchServerState();
+  if(!srv) return;
+
+  const prevHistory = history.slice();
+  const prevPositions = JSON.parse(JSON.stringify(positions));
+  const prevBal = demoBal;
+
+  // Offline aktiviteleri bul — sunucu state vs local state farkı
+  const srvHistory = srv.history || [];
+  const localIds = new Set(prevHistory.map(h=>h.id));
+
+  const newEvents = [];
+
+  // Sunucuda kapanan ama bende yeni olan işlemler
+  for(const sh of srvHistory){
+    if(!localIds.has(sh.id) && sh.exit_time && sh.exit_time > (lastServerSync||0)){
+      newEvents.push({
+        type: sh.pnl >= 0 ? 'win' : 'lose',
+        coin: sh.display_name || sh.symbol,
+        pnl: sh.pnl,
+        reason: sh.exit_reason,
+        time: sh.exit_time,
+        entry: sh.entry,
+        exitPrice: sh.exit_price,
+        tf: sh.tf
+      });
+    }
+    // Sunucuda var, bende yok = bende eksik → ekle
+    if(!localIds.has(sh.id)){
+      history.unshift({...sh,
+        displayName: sh.display_name,
+        entryTime: sh.entry_time,
+        exitTime: sh.exit_time,
+        exitPrice: sh.exit_price,
+        exitReason: sh.exit_reason,
+        posUSD: sh.pos_usd
+      });
+    }
+  }
+
+  // Sunucuda açık pozisyon var, bende yok = sunucu açmış
+  for(const sp of (srv.positions||[])){
+    if(!positions.find(p=>p.id===sp.id)){
+      newEvents.push({
+        type: 'opened',
+        coin: sp.display_name || sp.symbol,
+        entry: sp.entry,
+        time: sp.entry_time,
+        tf: sp.tf,
+        score: sp.score
+      });
+    }
+  }
+
+  // Bakiye güncelle
+  if(!isLiveMode && srv.demo_bal !== undefined){
+    demoBal = srv.demo_bal;
+    demoPnL = srv.demo_pnl || 0;
+  }
+
+  // Sunucu pozisyonlarını al (bende yoksa)
+  if((srv.positions||[]).length > 0 && positions.length === 0){
+    for(const sp of srv.positions){
+      const pos = {
+        id: sp.id,
+        symbol: sp.symbol,
+        displayName: sp.display_name,
+        entry: sp.entry,
+        livePrice: sp.live_price || sp.entry,
+        entryTime: sp.entry_time,
+        posUSD: sp.pos_usd,
+        grossUSD: sp.gross_usd,
+        commission: sp.commission,
+        coinQty: sp.qty,
+        trailPct: sp.trail_pct,
+        trailSL: sp.trail_sl,
+        initSL: sp.init_sl,
+        targetTP: sp.target_tp,
+        tpPct: sp.tp_pct,
+        score: sp.score,
+        tf: sp.tf,
+        isLive: sp.is_live,
+        _trendPass: sp.trend_pass,
+        _rsiOk: sp.rsi_ok,
+        _volOk: sp.vol_ok,
+        _bollOk: sp.boll_ok
+      };
+      addPosition(pos);
+    }
+    if(trade){
+      document.getElementById('tradeBanner').className='trade-banner on';
+      document.getElementById('tb-coin').textContent=trade.displayName;
+      document.getElementById('tb-entry').textContent='$'+fmtP(trade.entry);
+      document.getElementById('tb-tsl').textContent='$'+fmtP(trade.trailSL);
+      document.getElementById('tb-tp').textContent='$'+fmtP(trade.targetTP);
+      document.getElementById('tbl-sl').textContent='SL $'+fmtP(trade.trailSL);
+      document.getElementById('tbl-tp').textContent='TP $'+fmtP(trade.targetTP);
+      const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
+      startEl(); openWS(trade.symbol); startPosCheck(); startUpperTFWatch();
+    }
+  }
+
+  // Sunucu sinyallerini al (boşsa)
+  if((srv.signals||[]).length > 0 && signals.length === 0){
+    signals = (srv.signals||[]).map(s=>({
+      ...s,
+      displayName: s.display_name,
+      targetTP: s.target_tp,
+      tpPct: s.tp_pct,
+      swingLow: s.swing_low,
+      scannedAt: s.scanned_at,
+      trend: {pass: s.trend_pass, score: s.trend_pass?30:0, ma7:0, ma30:0, macdHist:0},
+      rsi: {pass: s.rsi>=50, score: s.rsi>=50?15:0, rsi: s.rsi||50},
+      boll: {pass: true, score: 8},
+      vol: {pass: s.vol_ok, score: s.vol_ok?14:0, ratio: 1}
+    }));
+    document.getElementById('b-sig').textContent = signals.length;
+  }
+
+  // Offline aktiviteleri kaydet ve göster
+  if(newEvents.length > 0){
+    offlineActivities = [...newEvents, ...offlineActivities].slice(0, 20);
+    DB.s('offlineActivities', offlineActivities);
+    showOfflinePanel(newEvents);
+  }
+
+  // Sunucu loglarını ekle
+  if(srv.logs && srv.logs.length){
+    const logList = document.getElementById('logList');
+    if(logList){
+      // Sunucuda olan ama bende olmayan loglar
+      const lastLocalLog = logList.firstChild?.querySelector('.log-m')?.textContent || '';
+      for(const l of (srv.logs||[]).slice(0,30)){
+        if(l.msg === lastLocalLog) break;
+        const li = document.createElement('li'); li.className='log-li';
+        li.innerHTML=`<span class="log-t">${l.time||'--:--:--'}</span><span class="log-m ${l.cls||''}">[SRV] ${l.msg}</span>`;
+        logList.appendChild(li);
+      }
+    }
+  }
+
+  save();
+  refreshBal();
+  renderHistory();
+
+  log('🖥️ Sunucu senkronize edildi'+(newEvents.length?` — ${newEvents.length} yeni olay`:''), 'blue');
+}
+
+// Offline aktivite panelini göster
+function showOfflinePanel(events){
+  let panel = document.getElementById('offlinePanel');
+  if(!panel){
+    panel = document.createElement('div');
+    panel.id = 'offlinePanel';
+    panel.style.cssText = `
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(1,4,9,0.96);z-index:9998;
+      display:flex;flex-direction:column;align-items:center;
+      justify-content:center;padding:20px;max-width:430px;margin:0 auto;
+    `;
+    document.body.appendChild(panel);
+  }
+
+  const wins   = events.filter(e=>e.type==='win');
+  const losses = events.filter(e=>e.type==='lose');
+  const opened = events.filter(e=>e.type==='opened');
+  const totalPnl = events.reduce((s,e)=>s+(e.pnl||0), 0);
+
+  panel.innerHTML = `
+    <div style="width:100%;max-width:380px">
+      <div style="text-align:center;margin-bottom:20px">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;
+          background:linear-gradient(135deg,var(--gold),var(--gold2));
+          -webkit-background-clip:text;-webkit-text-fill-color:transparent">ARNA</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">📱 Telefon Kapalıyken Yapılanlar</div>
+      </div>
+
+      <!-- ÖZET -->
+      <div style="background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+          <div>
+            <div style="font-size:22px;font-weight:700;color:var(--up)">${wins.length}</div>
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Kazanç</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:700;color:${totalPnl>=0?'var(--up)':'var(--dn)'}">${totalPnl>=0?'+':''}${totalPnl.toFixed(2)}$</div>
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Toplam P&L</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:700;color:var(--dn)">${losses.length}</div>
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Zarar</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OLAYLAR -->
+      <div style="max-height:320px;overflow-y:auto;margin-bottom:14px">
+        ${events.map(e=>{
+          const t = e.time ? new Date(e.time).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}) : '--:--';
+          if(e.type==='win') return `
+            <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);
+              border-radius:8px;padding:10px 12px;margin-bottom:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <span style="font-weight:700;font-size:14px;color:var(--white)">${e.coin}</span>
+                  <span style="font-size:10px;color:var(--muted);margin-left:6px">${e.tf||''} · ${t}</span>
+                </div>
+                <span style="color:var(--up);font-weight:700;font-size:15px">+${e.pnl.toFixed(2)}$</span>
+              </div>
+              <div style="font-size:10px;color:var(--muted);margin-top:4px">
+                💰 TP ile kapandı · Giriş $${e.entry?.toFixed(4)||'—'} → Çıkış $${e.exitPrice?.toFixed(4)||'—'}
+              </div>
+            </div>`;
+          if(e.type==='lose') return `
+            <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);
+              border-radius:8px;padding:10px 12px;margin-bottom:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <span style="font-weight:700;font-size:14px;color:var(--white)">${e.coin}</span>
+                  <span style="font-size:10px;color:var(--muted);margin-left:6px">${e.tf||''} · ${t}</span>
+                </div>
+                <span style="color:var(--dn);font-weight:700;font-size:15px">${e.pnl.toFixed(2)}$</span>
+              </div>
+              <div style="font-size:10px;color:var(--muted);margin-top:4px">
+                🔴 SL ile kapandı · Giriş $${e.entry?.toFixed(4)||'—'} → Çıkış $${e.exitPrice?.toFixed(4)||'—'}
+              </div>
+            </div>`;
+          if(e.type==='opened') return `
+            <div style="background:rgba(240,180,41,.06);border:1px solid rgba(240,180,41,.2);
+              border-radius:8px;padding:10px 12px;margin-bottom:8px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <span style="font-weight:700;font-size:14px;color:var(--white)">${e.coin}</span>
+                  <span style="font-size:10px;color:var(--muted);margin-left:6px">${e.tf||''} · ${t}</span>
+                </div>
+                <span style="color:var(--gold);font-weight:700;font-size:12px">AÇILDI</span>
+              </div>
+              <div style="font-size:10px;color:var(--muted);margin-top:4px">
+                ⚡ Otomatik giriş · $${e.entry?.toFixed(4)||'—'} · Skor: ${e.score||'—'}
+              </div>
+            </div>`;
+          return '';
+        }).join('')}
+      </div>
+
+      <button onclick="document.getElementById('offlinePanel').remove()"
+        style="width:100%;padding:14px;background:linear-gradient(135deg,var(--gold),var(--gold2));
+        border:none;border-radius:10px;color:#000;font-weight:800;font-size:15px;cursor:pointer">
+        ✓ Tamam, Devam Et
+      </button>
+    </div>
+  `;
+}
+
+// Sunucuya periyodik state gönder (index.html başrol, sunucu yedek)
+async function pushStateToServer(){
+  if(!serverOnline) return;
+  await sendServer('sync_state', {
+    state: {
+      positions: positions.map(p=>({
+        id: p.id, symbol: p.symbol, display_name: p.displayName,
+        entry: p.entry, live_price: p.livePrice, entry_time: p.entryTime,
+        pos_usd: p.posUSD, gross_usd: p.grossUSD, commission: p.commission,
+        qty: p.coinQty, trail_pct: p.trailPct, trail_sl: p.trailSL, init_sl: p.initSL,
+        target_tp: p.targetTP, tp_pct: p.tpPct, score: p.score, tf: p.tf,
+        is_live: p.isLive, trend_pass: p._trendPass, rsi_ok: p._rsiOk,
+        vol_ok: p._volOk, boll_ok: p._bollOk
+      })),
+      signals: signals.map(s=>({
+        symbol: s.symbol, display_name: s.displayName, price: s.price,
+        change: s.change, score: s.score, verdict: s.verdict,
+        rsi: s.rsi?.rsi||s.rsi||50, trend_pass: s.trend?.pass||false,
+        rsi_ok: s.rsi?.pass||false, vol_ok: s.vol?.pass||false, boll_ok: s.boll?.pass||false,
+        target_tp: s.targetTP, tp_pct: s.tpPct, swing_low: s.swingLow,
+        scanned_at: s.scannedAt, tf: s.tf
+      })),
+      demo_bal: demoBal, demo_pnl: demoPnL,
+      mode: isLiveMode ? 'live' : 'demo',
+      auto_scan: autoScanOn, auto_trade: autoTradeOn,
+      pos_exit_threshold: posExitThreshold
+    }
+  });
+}
+
+// Sunucu config sync
+async function pushConfigToServer(){
+  if(!serverOnline) return;
+  const tf    = document.getElementById('p-tf')?.value || '5m';
+  const score = document.getElementById('p-score')?.value || 80;
+  const trail = document.getElementById('p-trail')?.value || 1.5;
+  const pos   = document.getElementById('p-pos')?.value || 400;
+  const pMin  = document.getElementById('p-min')?.value || 3;
+  const pMax  = document.getElementById('p-max')?.value || 5;
+  await sendServer('set_config', {
+    config: {
+      tf, min_score: parseInt(score), trail_pct: parseFloat(trail),
+      pos_usd: parseFloat(pos), pct_filter_on: pctFilterOn,
+      min_change: parseFloat(pMin), max_change: parseFloat(pMax)
+    }
+  });
+}
+
+// OTO TARA / OTO AL-SAT sunucuya da bildir
+const _origToggleAutoScan = typeof toggleAutoScan === 'function' ? toggleAutoScan : null;
+const _origToggleAutoTrade = typeof toggleAutoTrade === 'function' ? toggleAutoTrade : null;
+
+// Sayfa açılınca sunucu senkronize et
+setTimeout(async ()=>{
+  offlineActivities = DB.g('offlineActivities', []);
+  const srv = await fetchServerState();
+  if(srv) await syncOnWake();
+
+  // Periyodik senkron: her 30sn sunucu → index
+  setInterval(async ()=>{
+    const s = await fetchServerState();
+    if(s){
+      // Sunucuda kapanan yeni işlem var mı?
+      const newClosed = (s.history||[]).filter(sh=>{
+        if(!sh.exit_time) return false;
+        const local = history.find(h=>h.id===sh.id);
+        return !local || (!local.exitTime && sh.exit_time);
+      });
+      if(newClosed.length) await syncOnWake();
+      // Pozisyon fiyatını sunucudan al (telefon arka planda)
+      if(document.hidden && trade){
+        const sp = (s.positions||[]).find(p=>p.id===trade.id);
+        if(sp){
+          trade.trailSL  = sp.trail_sl;
+          trade.targetTP = sp.target_tp;
+          trade.livePrice= sp.live_price;
+        }
+      }
+    }
+  }, 30000);
+
+  // Periyodik push: index → sunucu (her 60sn)
+  setInterval(pushStateToServer, 60000);
+
+}, 3000);
+
 
 /* STATE */
 let scanning = false, autoOn = false, autoTimer = null;
@@ -2458,13 +2761,13 @@ function toggleAutoScan(){
     btn.textContent='🔄 OTO TARA: AÇIK'; btn.className='btn-auto on';
     if(autoScanTimer) clearInterval(autoScanTimer);
     autoScanTimer=setInterval(()=>{ if(!scanning) startScan(); },120000);
-    log('🔄 Otomatik tarama açıldı (2dk)','gold');
-    if(botOK) botPost('set_auto_scan',{value:true});
+    log('🔄 Otomatik tarama açıldı (2dk) — sunucu da tarayacak','gold');
+    sendServer('set_auto_scan',{value:true}); pushConfigToServer();
   } else {
     btn.textContent='🔄 OTO TARA'; btn.className='btn-auto';
     if(autoScanTimer){clearInterval(autoScanTimer);autoScanTimer=null;}
     log('🔄 Otomatik tarama durduruldu','gold');
-    if(botOK) botPost('set_auto_scan',{value:false});
+    sendServer('set_auto_scan',{value:false});
   }
 }
 
@@ -2473,14 +2776,14 @@ function toggleAutoTrade(){
   const btn=document.getElementById('btnAutoTrade');
   if(autoTradeOn){
     btn.textContent='🤖 OTO AL/SAT: AÇIK'; btn.className='btn-auto on';
-    log('🤖 Otomatik AL/SAT açıldı','gold');
+    log('🤖 Otomatik AL/SAT açıldı — telefon kapansa da sunucu devam eder','gold');
     notify('🤖 OTO AL/SAT AÇIK','Sistem otomatik işlem yapıyor');
+    sendServer('set_auto_trade',{value:true}); pushConfigToServer();
     if(signals.length&&!trade) autoEnter();
-    if(botOK) botPost('set_auto_trade',{value:true});
   } else {
     btn.textContent='🤖 OTO AL/SAT: KAPALI'; btn.className='btn-auto';
     log('🤖 Otomatik AL/SAT durduruldu','gold');
-    if(botOK) botPost('set_auto_trade',{value:false});
+    sendServer('set_auto_trade',{value:false});
   }
 }
 
