@@ -292,11 +292,12 @@ body{
 /* ── LOG ── */
 .log-box{background:var(--ink1);border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:14px}
 .log-head{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:7px}
-.log-list{list-style:none;max-height:90px;overflow-y:auto}
-.log-li{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px}
-.log-t{font-family:'DM Mono',monospace;color:var(--muted);white-space:nowrap;min-width:46px}
-.log-m{color:var(--dim)}
+.log-list{list-style:none;max-height:160px;overflow-y:auto}
+.log-li{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:10px;line-height:1.4}
+.log-t{font-family:'DM Mono',monospace;color:var(--muted);white-space:nowrap;min-width:46px;font-size:9px;padding-top:1px;flex-shrink:0}
+.log-m{color:var(--dim);font-size:10px;word-break:break-word}
 .log-m.up{color:var(--up)}.log-m.dn{color:var(--dn)}.log-m.gold{color:var(--gold)}.log-m.blue{color:var(--blue)}
+.log-m.srv{color:var(--muted);font-size:9px;opacity:0.75}
 
 /* ── GEÇMİŞ ── */
 .hist-item{background:var(--ink1);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px}
@@ -585,6 +586,14 @@ body{
 <!-- TAKİP & ÖĞRENME -->
 <div class="page" id="pg-learn">
   <div class="scroll" style="padding:14px">
+    <!-- Sunucu Aktivitesi Paneli -->
+    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)">🖥️ Sunucu Aktivitesi</div>
+        <div id="srvActTime" style="font-size:9px;color:var(--muted);font-family:'DM Mono',monospace">—</div>
+      </div>
+      <div id="srvActArea"><div style="color:var(--muted);font-size:11px;text-align:center;padding:16px">Sunucu henüz işlem yapmadı</div></div>
+    </div>
     <!-- Son 5 işlem takibi -->
     <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px">
       <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:10px">📊 Son 5 İşlem Takibi</div>
@@ -1143,16 +1152,21 @@ async function syncOnWake(){
     showOfflinePanel(newEvents);
   }
 
-  // Sunucu loglarını ekle
+  // Sunucu loglarını ekle - sadece son 2 saat, tekrar yok
   if(srv.logs && srv.logs.length){
     const logList = document.getElementById('logList');
     if(logList){
-      // Sunucuda olan ama bende olmayan loglar
-      const lastLocalLog = logList.firstChild?.querySelector('.log-m')?.textContent || '';
-      for(const l of (srv.logs||[]).slice(0,30)){
-        if(l.msg === lastLocalLog) break;
+      const nowH = new Date().getHours();
+      const existingMsgs = new Set([...logList.querySelectorAll('.log-m')].map(el=>el.textContent.replace('[SRV] ','')));
+      const recentSrvLogs = (srv.logs||[]).filter(l=>{
+        if(existingMsgs.has(l.msg)) return false;
+        const h = parseInt((l.time||'00').split(':')[0]);
+        const diff = (nowH - h + 24) % 24;
+        return diff <= 4;
+      }).slice(0, 8);
+      for(const l of recentSrvLogs){
         const li = document.createElement('li'); li.className='log-li';
-        li.innerHTML=`<span class="log-t">${l.time||'--:--:--'}</span><span class="log-m ${l.cls||''}">[SRV] ${l.msg}</span>`;
+        li.innerHTML=`<span class="log-t">${l.time||'--:--:--'}</span><span class="log-m srv">[SRV] ${l.msg}</span>`;
         logList.appendChild(li);
       }
     }
@@ -1161,6 +1175,12 @@ async function syncOnWake(){
   save();
   refreshBal();
   renderHistory();
+
+  // Sunucu aktivitelerini kaydet
+  if(srv.server_activities && srv.server_activities.length){
+    window._srvActivities = srv.server_activities;
+    DB.s('srvActivities', srv.server_activities);
+  }
 
   log('🖥️ Sunucu senkronize edildi'+(newEvents.length?` — ${newEvents.length} yeni olay`:''), 'blue');
 }
@@ -3494,9 +3514,63 @@ function saveTradeDecisions(h){
 
 // Takip panelini render et
 function renderLearn(){
+  renderSrvActivities();
   renderTrackArea();
   renderAccuracy();
   renderLearnNote();
+}
+
+function renderSrvActivities(){
+  const area = document.getElementById('srvActArea');
+  const timeEl = document.getElementById('srvActTime');
+  if(!area) return;
+
+  // Sunucudan al veya localStorage'dan
+  const acts = window._srvActivities || DB.g('srvActivities', []);
+  if(!acts.length){
+    area.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:16px">Sunucu henüz işlem yapmadı</div>';
+    return;
+  }
+
+  if(timeEl) timeEl.textContent = 'Son ' + acts.length + ' işlem';
+
+  area.innerHTML = acts.slice(0, 20).map(a=>{
+    const t = a.time_str || (a.time ? new Date(a.time).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}) : '--:--');
+    const pnlColor = a.pnl >= 0 ? 'var(--up)' : 'var(--dn)';
+
+    if(a.type === 'opened') return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)">
+        <div>
+          <span style="font-weight:700;font-size:12px;color:var(--white)">${a.coin}</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:6px">${a.tf} · ${t}</span>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--gold);font-weight:600">⚡ AÇILDI</div>
+          <div style="font-size:9px;color:var(--muted)">$${a.entry?.toFixed(4)||'—'} · Skor:${a.score||'—'}</div>
+        </div>
+      </div>`;
+
+    // Takip sonucu varsa göster
+    let trackBadge = '';
+    if(a.track_verdict === 'early_exit') trackBadge = `<span style="font-size:9px;color:var(--gold)">⚠️ Erken çıkış (+%${a.up_from_exit})</span>`;
+    else if(a.track_verdict === 'correct_exit') trackBadge = `<span style="font-size:9px;color:var(--up)">✅ Doğru çıkış (-%${a.down_from_exit})</span>`;
+    else if(a.track_verdict === 'neutral') trackBadge = `<span style="font-size:9px;color:var(--muted)">➖ Nötr</span>`;
+
+    return `
+      <div style="padding:7px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span style="font-weight:700;font-size:12px;color:var(--white)">${a.coin}</span>
+            <span style="font-size:9px;color:var(--muted);margin-left:6px">${a.tf} · ${t} · ${a.duration_min||0}dk</span>
+          </div>
+          <span style="color:${pnlColor};font-weight:700;font-size:13px">${a.pnl>=0?'+':''}${a.pnl?.toFixed(2)}$</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:3px">
+          <span style="font-size:9px;color:var(--muted)">$${a.entry?.toFixed(4)||'—'} → $${a.exit_price?.toFixed(4)||'—'} · ${a.reason}</span>
+          ${trackBadge}
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderTrackArea(){
