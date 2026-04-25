@@ -2976,6 +2976,8 @@ async function enterTradeWithSignal(s){
   log('✅ GİRİŞ'+(isLiveMode?' 💰':' 🎮')+': '+s.displayName+' @ $'+fmtP(actualEntry)+' | $'+posUSD.toFixed(0)+commStr+' | SL $'+fmtP(initSL)+posNum,'up');
   history.unshift({...pos,result:'open',pnl:null,exitPrice:null,exitTime:null});
   save(); renderSignals(); refreshBal();
+  // Sunucuya bildir — telefon kapansa da sunucu takip etsin
+  setTimeout(pushStateToServer, 1000);
 }
 
 function setP(pct,txt){
@@ -4153,39 +4155,105 @@ loadLogs();
   restorePositions();
 })();
 
-function restorePositions(){
-  // Positions restore
-  const savedPos=DB.g('positions',null);
-  if(savedPos&&Array.isArray(savedPos)&&savedPos.length>0){
-    positions=savedPos; syncTrade();
-    if(trade){
-      document.getElementById('tradeBanner').className='trade-banner on';
-      document.getElementById('tb-coin').textContent=positions.length>1?positions.map(p=>p.displayName).join(' + '):trade.displayName;
-      document.getElementById('tb-entry').textContent='$'+fmtP(trade.entry);
-      document.getElementById('tb-tsl').textContent='$'+fmtP(trade.trailSL);
-      document.getElementById('tb-tp').textContent='$'+fmtP(trade.targetTP);
-      document.getElementById('tbl-sl').textContent='SL $'+fmtP(trade.trailSL);
-      document.getElementById('tbl-tp').textContent='TP $'+fmtP(trade.targetTP);
-      const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
-      startEl(); openWS(trade.symbol); startPosCheck(); startUpperTFWatch();
-      log('📂 '+positions.length+' pozisyon yüklendi: '+positions.map(p=>p.displayName).join(', '),'gold');
+async function restorePositions(){
+  // Önce sunucudan yükle — sunucu gerçek kaynak
+  try{
+    const srv = await fetchServerState();
+    if(srv){
+      // Sunucu geçmişini yükle
+      if(srv.history && srv.history.length > 0){
+        const srvHistory = srv.history.map(h=>({
+          ...h,
+          displayName: h.display_name || h.displayName,
+          entryTime: h.entry_time || h.entryTime,
+          exitTime: h.exit_time || h.exitTime,
+          exitPrice: h.exit_price || h.exitPrice,
+          exitReason: h.exit_reason || h.exitReason,
+          posUSD: h.pos_usd || h.posUSD,
+          trailSL: h.trail_sl || h.trailSL,
+          targetTP: h.target_tp || h.targetTP,
+          tpPct: h.tp_pct || h.tpPct,
+          trailPct: h.trail_pct || h.trailPct,
+          initSL: h.init_sl || h.initSL,
+          coinQty: h.qty || h.coinQty,
+          grossUSD: h.gross_usd || h.grossUSD
+        }));
+        // Sunucu geçmişini local ile birleştir — tekrar olmasın
+        const localIds = new Set(history.map(h=>h.id));
+        for(const sh of srvHistory){
+          if(!localIds.has(sh.id)) history.unshift(sh);
+        }
+        history.sort((a,b)=>(b.exitTime||b.id)-(a.exitTime||a.id));
+        saveHistory();
+      }
+      // Bakiye sunucudan al
+      if(!isLiveMode && srv.demo_bal !== undefined){
+        demoBal = srv.demo_bal;
+        demoPnL = srv.demo_pnl || 0;
+        DB.s('bal', demoBal);
+        DB.s('pnl', demoPnL);
+      }
+      // Sunucuda açık pozisyon varsa yükle
+      if(srv.positions && srv.positions.length > 0 && positions.length === 0){
+        for(const sp of srv.positions){
+          const pos = {
+            id: sp.id, symbol: sp.symbol,
+            displayName: sp.display_name || sp.displayName,
+            entry: sp.entry, livePrice: sp.live_price || sp.entry,
+            entryTime: sp.entry_time || sp.entryTime,
+            posUSD: sp.pos_usd || sp.posUSD,
+            grossUSD: sp.gross_usd || sp.grossUSD,
+            commission: sp.commission,
+            coinQty: sp.qty || sp.coinQty,
+            trailPct: sp.trail_pct || sp.trailPct || 1.5,
+            trailSL: sp.trail_sl || sp.trailSL,
+            initSL: sp.init_sl || sp.initSL,
+            targetTP: sp.target_tp || sp.targetTP,
+            tpPct: sp.tp_pct || sp.tpPct,
+            score: sp.score, tf: sp.tf,
+            isLive: sp.is_live,
+            _trendPass: sp.trend_pass, _rsiOk: sp.rsi_ok,
+            _volOk: sp.vol_ok, _bollOk: sp.boll_ok
+          };
+          addPosition(pos);
+        }
+        log('📂 Sunucudan '+srv.positions.length+' pozisyon yüklendi','gold');
+      }
+      log('🖥️ Sunucu state yüklendi','blue');
     }
-  } else {
-    const st=DB.g('trade',null);
-    if(st&&st.symbol&&st.entry){
-      positions=[{...st}]; syncTrade();
-      document.getElementById('tradeBanner').className='trade-banner on';
-      document.getElementById('tb-coin').textContent=st.displayName;
-      document.getElementById('tb-entry').textContent='$'+fmtP(st.entry);
-      document.getElementById('tb-tsl').textContent='$'+fmtP(st.trailSL);
-      document.getElementById('tb-tp').textContent='$'+fmtP(st.targetTP);
-      document.getElementById('tbl-sl').textContent='SL $'+fmtP(st.trailSL);
-      document.getElementById('tbl-tp').textContent='TP $'+fmtP(st.targetTP);
-      const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
-      startEl(); openWS(st.symbol); startPosCheck(); startUpperTFWatch();
-      log('📂 Açık işlem yüklendi: '+st.displayName,'gold');
+  }catch(e){
+    log('⚠️ Sunucu yüklenemedi, localStorage kullanılıyor','gold');
+  }
+
+  // Sunucudan pozisyon gelmediyse localStorage'dan dene
+  if(positions.length === 0){
+    const savedPos=DB.g('positions',null);
+    if(savedPos&&Array.isArray(savedPos)&&savedPos.length>0){
+      positions=savedPos; syncTrade();
+      log('📂 localStorage\'dan '+positions.length+' pozisyon yüklendi','gold');
+    } else {
+      const st=DB.g('trade',null);
+      if(st&&st.symbol&&st.entry){
+        positions=[{...st}]; syncTrade();
+        log('📂 Açık işlem yüklendi: '+st.displayName,'gold');
+      }
     }
   }
+
+  // Pozisyon varsa UI güncelle
+  if(trade){
+    document.getElementById('tradeBanner').className='trade-banner on';
+    document.getElementById('tb-coin').textContent=positions.length>1?positions.map(p=>p.displayName).join(' + '):trade.displayName;
+    document.getElementById('tb-entry').textContent='$'+fmtP(trade.entry);
+    document.getElementById('tb-tsl').textContent='$'+fmtP(trade.trailSL);
+    document.getElementById('tb-tp').textContent='$'+fmtP(trade.targetTP);
+    document.getElementById('tbl-sl').textContent='SL $'+fmtP(trade.trailSL);
+    document.getElementById('tbl-tp').textContent='TP $'+fmtP(trade.targetTP);
+    const pb=document.getElementById('posAnalysisBar');if(pb)pb.style.display='block';
+    startEl(); openWS(trade.symbol); startPosCheck(); startUpperTFWatch();
+  }
+
+  // OTO sistemleri restore et
   if(DB.g('autoScanOn',false)){
     autoScanOn=true;
     document.getElementById('btnAutoScan').textContent='🔄 OTO TARA: AÇIK';
@@ -4193,15 +4261,21 @@ function restorePositions(){
     autoScanTimer=setInterval(()=>{if(!scanning)startScan();},120000);
     log('🔄 OTO TARA restore edildi','gold');
     setTimeout(()=>{if(!scanning)startScan();},3000);
+    sendServer('set_auto_scan',{value:true});
   }
   if(DB.g('autoTradeOn',false)){
     autoTradeOn=true;
     document.getElementById('btnAutoTrade').textContent='🤖 OTO AL/SAT: AÇIK';
     document.getElementById('btnAutoTrade').className='btn-auto on';
     log('🤖 OTO AL/SAT restore edildi','gold');
+    sendServer('set_auto_trade',{value:true});
   }
   refreshBal();
   updateModBtn();
+  renderHistory();
+
+  // İşlem açılınca sunucuya da bildir
+  if(trade) pushStateToServer();
 }
 // startApp - restorePositions çağırır
 const _origStartApp = startApp;
