@@ -240,7 +240,167 @@ def analyze_tf(symbol, tf):
                 'ma7': tr['ma7'], 'ma30': tr['ma30']}
     except: return None
 
-# ── KARA LİSTE ──
+# ── ÖĞRENME SİSTEMİ ──
+LEARN_FILE = '/root/arna_learn.json'
+
+def load_learn():
+    try:
+        with open(LEARN_FILE) as f: return json.load(f)
+    except:
+        return {
+            'total_trades': 0, 'wins': 0,
+            'trades': [],
+            'weights': {'trend':1.0,'rsi':1.0,'vol':1.0,'boll':1.0},
+            'tf_stats': {},
+            'pos_exit_threshold': -5
+        }
+
+def save_learn(learn):
+    try:
+        with open(LEARN_FILE, 'w') as f: json.dump(learn, f)
+    except: pass
+
+def update_weights(learn):
+    trades = learn['trades']
+    if len(trades) < 5: return
+    keys = ['trend','rsi','vol','boll']
+    for k in keys:
+        with_ind    = [t for t in trades if t.get(k)==1]
+        without_ind = [t for t in trades if t.get(k)==0]
+        if len(with_ind) < 3: continue
+        wr_with    = sum(1 for t in with_ind if t['result']=='win') / len(with_ind)
+        wr_without = sum(1 for t in without_ind if t['result']=='win') / len(without_ind) if without_ind else 0
+        if wr_with > wr_without + 0.1:
+            learn['weights'][k] = min(1.5, learn['weights'][k] + 0.05)
+        elif wr_with < wr_without - 0.1:
+            learn['weights'][k] = max(0.5, learn['weights'][k] - 0.05)
+
+def apply_learning(score, tr, rsi, bol, vol, learn):
+    if learn['total_trades'] < 5: return score
+    w = learn['weights']
+    adj = score
+    if tr['pass']  and w['trend'] < 0.8: adj -= 5
+    if rsi['pass'] and w['rsi']   < 0.8: adj -= 3
+    if vol['pass'] and w['vol']   < 0.8: adj -= 5
+    if bol['pass'] and w['boll']  < 0.8: adj -= 3
+    if tr['pass']  and w['trend'] > 1.2: adj += 3
+    if vol['pass'] and w['vol']   > 1.2: adj += 3
+    return max(0, min(100, round(adj)))
+
+def record_trade(learn, result, tr_pass, rsi_ok, vol_ok, boll_ok, pnl_pct, tf):
+    learn['total_trades'] += 1
+    if result == 'win': learn['wins'] += 1
+    hour = datetime.now().hour
+    session = 'EU' if 9<=hour<17 else 'US' if 17<=hour<23 else 'ASIA'
+    entry = {
+        'result': result, 'trend': 1 if tr_pass else 0,
+        'rsi': 1 if rsi_ok else 0, 'vol': 1 if vol_ok else 0,
+        'boll': 1 if boll_ok else 0, 'pnl_pct': pnl_pct,
+        'tf': tf, 'hour': hour, 'session': session,
+        'ts': int(time.time()*1000)
+    }
+    learn['trades'].append(entry)
+    if len(learn['trades']) > 200: learn['trades'].pop(0)
+    update_weights(learn)
+    # TF stats
+    if 'tf_stats' not in learn: learn['tf_stats'] = {}
+    if tf not in learn['tf_stats']: learn['tf_stats'][tf] = {'wins':0,'losses':0,'total_pnl':0}
+    if result == 'win': learn['tf_stats'][tf]['wins'] += 1
+    else: learn['tf_stats'][tf]['losses'] += 1
+    learn['tf_stats'][tf]['total_pnl'] += pnl_pct
+    save_learn(learn)
+
+# ── MUM KAPANIŞI KONTROLÜ (waitForCandleClose birebir) ──
+def check_candle_timing(symbol, tf):
+    """Mum son %15'inde veya yeni açıldıysa True, ortasındaysa False döner"""
+    try:
+        klines_raw = binance_get('/klines', {'symbol': symbol, 'interval': tf, 'limit': 2})
+        if not klines_raw or len(klines_raw) < 2: return True, 0
+        open_candle = klines_raw[-1]
+        candle_open_time  = open_candle[0]
+        candle_close_time = open_candle[6]
+        now_ms = int(time.time() * 1000)
+        candle_duration = candle_close_time - candle_open_time
+        elapsed = now_ms - candle_open_time
+        elapsed_pct = elapsed / candle_duration
+        remaining_min = round((candle_close_time - now_ms) / 60000)
+        # Son %15 veya ilk %5 → direkt gir
+        if elapsed_pct >= 0.85 or elapsed_pct <= 0.05:
+            return True, remaining_min
+        return False, remaining_min
+    except: return True, 0
+
+def check_and_enter(state, config, signal, learn):
+    """Mum kapandıktan sonra 4 kontrol yap, geçerse giriş yap"""
+    try:
+        klines_raw = binance_get('/klines', {'symbol': signal['symbol'], 'interval': signal['tf'], 'limit': 4})
+        if not klines_raw or len(klines_raw) < 3: 
+            open_position(state, config, signal, learn); return
+        new_candle  = klines_raw[-1]
+        prev_candle = klines_raw[-2]
+        new_open    = float(new_candle[1])
+        prev_close  = float(prev_candle[4])
+        closes = [float(k[4]) for k in klines_raw]
+        new_rsi = calc_rsi(closes, min(14, len(closes)-1))
+
+        # 1. Fiyat kayması ±%1
+        price_diff = abs(new_open - signal['price']) / signal['price'] * 100
+        if price_diff > 1:
+            log_msg(state, f'❌ OTO: {signal["display_name"]} fiyat kayması ({price_diff:.2f}%) — iptal', 'gold')
+            return
+
+        # 2. Yeni mum yeşil
+        if new_open < prev_close * 0.999:
+            log_msg(state, f'❌ OTO: {signal["display_name"]} yeni mum kırmızı — iptal', 'gold')
+            return
+
+        # 3. RSI hala iyi
+        if new_rsi < 40 or new_rsi > 78:
+            log_msg(state, f'❌ OTO: {signal["display_name"]} RSI bozuldu ({new_rsi:.0f}) — iptal', 'gold')
+            return
+
+        # 4. Hacim çökmüş mü
+        vols = [float(k[5]) for k in klines_raw]
+        if len(vols) >= 4:
+            avg_vol3 = sum(vols[:3]) / 3
+            if vols[-1] < avg_vol3 * 0.5:
+                log_msg(state, f'❌ OTO: {signal["display_name"]} hacim çöktü — iptal', 'gold')
+                return
+
+        log_msg(state, f'✅ OTO: {signal["display_name"]} mum kapandı, kontroller geçti — GİRİŞ!', 'up')
+        open_position(state, config, signal, learn)
+    except Exception as e:
+        log_msg(state, f'⚠️ check_and_enter hata: {str(e)[:40]}', 'gold')
+        open_position(state, config, signal, learn)
+
+# ── MOMENTUM TAKİBİ ──
+def check_momentum_exit(state, config, pos, momentum_prices):
+    """checkMomentumExit birebir — TP geçildiyse momentum takip et"""
+    if len(momentum_prices) < 10: return
+    lp = pos.get('live_price', pos['entry'])
+    pnl_pct = (lp - pos['entry']) / pos['entry'] * 100
+    if pnl_pct < pos['tp_pct'] * 0.6: return
+
+    recent5 = sum(momentum_prices[-5:]) / 5
+    older5  = sum(momentum_prices[-10:-5]) / 5 if len(momentum_prices) >= 10 else recent5
+    momentum = (recent5 - older5) / older5 * 100 if older5 > 0 else 0
+
+    now = time.time()
+    last_cd = pos.get('_momentum_cd', 0)
+    if now - last_cd > 30:
+        if momentum < -0.2:
+            pos['_momentum_cd'] = now
+            pnl = (lp - pos['entry']) / pos['entry'] * pos['pos_usd']
+            smart_tp = lp * 1.003
+            if smart_tp < pos['target_tp']:
+                pos['target_tp'] = smart_tp
+                log_msg(state, f'📉 Momentum kırıldı → TP sıkıştırıldı: ${smart_tp:.4f} (kar: +${pnl:.2f})', 'gold')
+        elif momentum > 0.5 and pnl_pct > pos['tp_pct']:
+            pos['_momentum_cd'] = now
+            new_tp = pos['target_tp'] * 1.008
+            if new_tp > pos['target_tp']:
+                pos['target_tp'] = new_tp
+                log_msg(state, f'🚀 Momentum güçlü → TP yükseltildi: ${new_tp:.4f}', 'up')
 blacklist = {}  # {symbol: {'ts': time, 'permanent': bool}}
 
 def clean_blacklist():
@@ -258,6 +418,7 @@ def add_blacklist(sym, permanent=False):
 STABLECOINS = {'BUSDUSDT','USDCUSDT','TUSDUSDT','FDUSDUSDT','DAIUSDT','USDPUSDT','EURUSDT','GBPUSDT'}
 
 def scan_market(state, config):
+    learn = load_learn()
     log_msg(state, 'Tarama basladi...', 'blue')
     state['scanning'] = True
     save_state(state)
@@ -358,8 +519,16 @@ def scan_market(state, config):
                     continue
 
                 sc = total_score(tr, rsiR, bol, vol, change)
+                sc = apply_learning(sc, tr, rsiR, bol, vol, learn)  # Öğrenme ağırlıkları uygula
                 sl = swing_low(klines, 10)
                 tp = calc_tp(price, sc)
+
+                # ★ MUM KAPANIŞI KONTROLÜ (4h ve 1d için)
+                if tf in ('4h', '1d'):
+                    candle_ok, remaining_min = check_candle_timing(sym, tf)
+                    if not candle_ok:
+                        log_msg(state, f'⏳ {sym[:8]} — mum ortasi ({remaining_min}dk kaldi)', 'gold')
+                        continue
 
                 if sc >= min_score:
                     display = sym.replace('USDT','').replace('TRY','')
@@ -412,9 +581,21 @@ def scan_market(state, config):
         buy_n = sum(1 for s in final if s['verdict']=='BUY')
         log_msg(state, f'Tarama tamam: {len(final)} sinyal | {buy_n} AL', 'up' if final else 'gold')
 
-        # OTO AL/SAT
+        # OTO AL/SAT - mum kapanışı bekle
         if state.get('auto_trade') and final and not state.get('positions'):
-            open_position(state, config, final[0])
+            best = final[0]
+            candle_ok, remaining_min = check_candle_timing(best['symbol'], best['tf'])
+            if candle_ok:
+                open_position(state, config, best, learn)
+            else:
+                log_msg(state, f'⏳ OTO: {best["display_name"]} mum kapanisi bekleniyor ({remaining_min}dk)', 'gold')
+                # remaining_min dakika sonra tekrar kontrol et
+                def delayed_enter(sig, rem):
+                    time.sleep(rem * 60 + 5)
+                    with state_lock:
+                        if state.get('auto_trade') and not state.get('positions'):
+                            check_and_enter(state, config, sig, learn)
+                threading.Thread(target=delayed_enter, args=(best, remaining_min), daemon=True).start()
 
     except Exception as e:
         log_msg(state, f'Tarama hata: {str(e)[:60]}', 'dn')
@@ -425,7 +606,8 @@ def scan_market(state, config):
 
 # ── POZİSYON YÖNETİMİ ──
 
-def open_position(state, config, signal):
+def open_position(state, config, signal, learn=None):
+    if learn is None: learn = load_learn()
     mode    = state.get('mode', 'demo')
     pos_usd = float(config.get('pos_usd', 400))
     trail_pct = float(config.get('trail_pct', 1.5))
@@ -483,7 +665,11 @@ def open_position(state, config, signal):
     log_msg(state, f'✅ GIRIS: {pos["display_name"]} @ ${entry:.4f} | ${pos_usd:.0f} | SL ${init_sl:.4f}', 'up')
     save_state(state)
 
-def close_position(state, config, pos, exit_price, reason):
+def close_position(state, config, pos, exit_price, reason, learn=None):
+    if learn is None: learn = load_learn()
+    commission = exit_price * pos['qty'] * 0.001
+    pnl = (exit_price - pos['entry']) / pos['entry'] * pos['pos_usd'] - commission
+    mode = state.get('mode', 'demo')
     commission = exit_price * pos['qty'] * 0.001
     pnl = (exit_price - pos['entry']) / pos['entry'] * pos['pos_usd'] - commission
     mode = state.get('mode', 'demo')
@@ -512,6 +698,10 @@ def close_position(state, config, pos, exit_price, reason):
                     'exit_reason': reason, 'exit_time': int(time.time()*1000)})
     icon = '💰' if pnl >= 0 else '⚠️'
     log_msg(state, f'{icon} CIKIS ({reason}): {pos["display_name"]} | {pnl:+.2f}$', 'up' if pnl >= 0 else 'dn')
+    record_trade(learn, 'win' if pnl>=0 else 'lose',
+                 pos.get('trend_pass',False), pos.get('rsi_ok',False),
+                 pos.get('vol_ok',False), pos.get('boll_ok',False),
+                 (pnl/pos['pos_usd'])*100, pos.get('tf','?'))
     save_state(state)
 
 # ── POZİSYON ANALİZİ (checkPosition birebir) ──
@@ -684,10 +874,12 @@ def check_upper_tfs(state, config, pos):
 
 def update_positions(state, config):
     if not state.get('positions'): return False
+    learn = load_learn()
     changed = False
     for pos in list(state['positions']):
         price = get_price(pos['symbol'])
         if not price: continue
+        last_price = pos.get('_last_price', 0)
         pos['live_price'] = price
         changed = True
 
@@ -700,17 +892,43 @@ def update_positions(state, config):
         tp_pct  = pos['tp_pct']
         pnl_pct = (price - pos['entry']) / pos['entry'] * 100
         if pnl_pct >= tp_pct * 0.5 and pos['trail_sl'] < pos['entry']:
-            pos['trail_sl'] = pos['entry']
+            pos['trail_sl'] = pos['entry'] * 1.002
             log_msg(state, f'🔒 BEP kilidi: SL girise cekidi ({pos["display_name"]})', 'gold')
+
+        # TP kilidi: TP'ye ulaşınca kârın %60'ını koru
+        if pnl_pct >= tp_pct:
+            lock_sl = pos['entry'] + (price - pos['entry']) * 0.6
+            if lock_sl > pos['trail_sl']:
+                pos['trail_sl'] = lock_sl
+
+        # ANİ DÜŞÜŞ TESPİTİ — %1.5+ ani düşüş → SL sıkıştır
+        if last_price > 0:
+            drop_pct = (last_price - price) / last_price * 100
+            now = time.time()
+            last_squeeze = pos.get('_last_sl_squeeze', 0)
+            if drop_pct >= 1.5 and now - last_squeeze > 30:
+                pos['_last_sl_squeeze'] = now
+                tighter_sl = price * (1 - (pos['trail_pct'] * 0.3) / 100)
+                if tighter_sl > pos['trail_sl']:
+                    pos['trail_sl'] = tighter_sl
+                    log_msg(state, f'⚡ ANI DUSUS (-%{drop_pct:.1f}%) → SL sikistirildi: ${tighter_sl:.4f}', 'gold')
+
+        pos['_last_price'] = price
+
+        # Momentum takibi
+        if '_momentum_prices' not in pos: pos['_momentum_prices'] = []
+        pos['_momentum_prices'].append(price)
+        if len(pos['_momentum_prices']) > 20: pos['_momentum_prices'].pop(0)
+        check_momentum_exit(state, config, pos, pos['_momentum_prices'])
 
         # SL kontrolü
         if price <= pos['trail_sl']:
-            close_position(state, config, pos, price, 'SL')
+            close_position(state, config, pos, price, 'SL', learn)
             return True
 
         # TP kontrolü
         if price >= pos['target_tp']:
-            close_position(state, config, pos, price, 'TP')
+            close_position(state, config, pos, price, 'TP', learn)
             return True
 
     return changed
