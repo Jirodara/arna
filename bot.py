@@ -785,6 +785,21 @@ def open_position(state, config, signal, learn=None):
         state['history'] = state['history'][:200]
 
     log_msg(state, f'✅ GİRİŞ: {pos["display_name"]} @ ${entry:.4f} | ${pos_usd:.0f} | SL ${init_sl:.4f}', 'up')
+
+    # Açılış aktivite kaydı
+    if 'server_activities' not in state:
+        state['server_activities'] = []
+    state['server_activities'].insert(0, {
+        'type': 'opened',
+        'coin': signal['display_name'],
+        'symbol': signal['symbol'],
+        'entry': entry,
+        'tf': signal['tf'],
+        'score': signal.get('score', 0),
+        'time': int(time.time() * 1000),
+        'time_str': datetime.now().strftime('%H:%M'),
+    })
+    state['server_activities'] = state['server_activities'][:50]
     save_state(state)
 
 def close_position(state, config, pos, exit_price, reason, learn=None):
@@ -832,7 +847,98 @@ def close_position(state, config, pos, exit_price, reason, learn=None):
                  pos.get('trend_pass', False), pos.get('rsi_ok', False),
                  pos.get('vol_ok', False), pos.get('boll_ok', False),
                  (pnl / pos['pos_usd']) * 100, pos.get('tf', '?'))
+
+    # Sunucu aktivite kaydı
+    if 'server_activities' not in state:
+        state['server_activities'] = []
+    state['server_activities'].insert(0, {
+        'type': 'win' if pnl >= 0 else 'lose',
+        'coin': pos.get('display_name', pos['symbol']),
+        'symbol': pos['symbol'],
+        'entry': pos['entry'],
+        'exit_price': exit_price,
+        'pnl': round(pnl, 2),
+        'reason': reason,
+        'tf': pos.get('tf', '?'),
+        'time': int(time.time() * 1000),
+        'time_str': datetime.now().strftime('%H:%M'),
+        'duration_min': round((time.time()*1000 - pos.get('entry_time', time.time()*1000)) / 60000)
+    })
+    state['server_activities'] = state['server_activities'][:50]
     save_state(state)
+
+    # Çıkış sonrası takip
+    threading.Thread(
+        target=post_trade_track,
+        args=(state, pos['symbol'], pos.get('display_name'), exit_price, pnl, reason, pos.get('tf','1h')),
+        daemon=True
+    ).start()
+
+# ── ÇIKIŞ SONRASI TAKİP (index.html ile birebir) ──
+POST_TRACK_DURATION = {
+    '1m': 10*60, '3m': 20*60, '5m': 30*60,
+    '15m': 60*60, '30m': 2*60*60, '1h': 4*60*60,
+    '2h': 6*60*60, '4h': 12*60*60
+}
+POST_TRACK_INTERVAL = {
+    '1m': 30, '3m': 60, '5m': 60,
+    '15m': 180, '30m': 300, '1h': 600,
+    '2h': 900, '4h': 1800
+}
+
+def post_trade_track(state, symbol, display_name, exit_price, pnl, reason, tf):
+    duration = POST_TRACK_DURATION.get(tf, 1800)
+    interval = POST_TRACK_INTERVAL.get(tf, 60)
+    end_time = time.time() + duration
+    prices = []
+
+    log_msg(state, f'📡 {display_name} çıkış sonrası takip başladı ({round(duration/60)}dk)', 'blue')
+
+    while time.time() < end_time:
+        time.sleep(interval)
+        price = get_price(symbol)
+        if price:
+            prices.append(price)
+
+    if not prices:
+        return
+
+    max_price = max(prices)
+    min_price = min(prices)
+    up_from_exit   = (max_price - exit_price) / exit_price * 100
+    down_from_exit = (exit_price - min_price) / exit_price * 100
+
+    if up_from_exit > 1.5 and reason != 'TP':
+        verdict = 'early_exit'
+        log_msg(state, f'📊 {display_name} takip bitti → ⚠️ Erken çıkış! +%{up_from_exit:.1f} daha yükseldi', 'gold')
+    elif down_from_exit > 1.0:
+        verdict = 'correct_exit'
+        log_msg(state, f'📊 {display_name} takip bitti → ✅ Doğru çıkış! -%{down_from_exit:.1f} düştü', 'up')
+    else:
+        verdict = 'neutral'
+        log_msg(state, f'📊 {display_name} takip bitti → Nötr', 'blue')
+
+    # Geçmişteki kaydı güncelle
+    with state_lock:
+        for h in state.get('history', []):
+            if h.get('symbol') == symbol and h.get('exit_reason') == reason:
+                age = time.time()*1000 - h.get('exit_time', 0)
+                if age < (duration+60)*1000:
+                    h['_post_track'] = {
+                        'verdict': verdict,
+                        'up_from_exit': round(up_from_exit, 1),
+                        'down_from_exit': round(down_from_exit, 1),
+                        'duration': round(duration/60)
+                    }
+                    break
+        # Aktivite kaydını güncelle
+        for a in state.get('server_activities', []):
+            if a.get('symbol') == symbol and a.get('reason') == reason:
+                a['track_verdict'] = verdict
+                a['up_from_exit'] = round(up_from_exit, 1)
+                a['down_from_exit'] = round(down_from_exit, 1)
+                break
+        save_state(state)
 
 # ══════════════════════════════════════════════════
 # FİYAT TAKİBİ — index.html fetchAndUpdatePrice birebir
