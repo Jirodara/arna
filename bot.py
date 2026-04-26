@@ -804,6 +804,9 @@ def open_position(state, config, signal, learn=None):
     save_state(state)
 
 def close_position(state, config, pos, exit_price, reason, learn=None):
+    # Çift kapanma koruması — pozisyon zaten listede yoksa çık
+    if not any(p['id'] == pos['id'] for p in state.get('positions', [])):
+        return
     if learn is None:
         learn = load_learn()
 
@@ -1361,9 +1364,16 @@ def main():
     print('ARNA Bot başlatıldı — 7/24 mod (index.html kuralları)')
     _state  = load_state()
     _config = load_config()
-    log_msg(_state, 'ARNA Bot başlatıldı', 'up')
-    save_state(_state)
 
+    # Kritik: scanning sıfırla ama auto_trade/auto_scan korunsun
+    _state['scanning'] = False
+    if 'auto_trade' not in _state:
+        _state['auto_trade'] = False
+    if 'auto_scan' not in _state:
+        _state['auto_scan'] = False
+
+    log_msg(_state, f'ARNA Bot | oto_tara={_state["auto_scan"]} | oto_al={_state["auto_trade"]}', 'up')
+    save_state(_state)
     threading.Thread(target=run_api, daemon=True).start()
 
     # Zamanlayıcılar (index.html ile birebir aynı)
