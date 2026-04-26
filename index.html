@@ -4272,6 +4272,12 @@ loadLogs();
 
 // API modal göster — her zaman açılışta sor
 (function initApp(){
+  // Otomatik demo başlat — modal gösterme
+  const savedMode = DB.g('liveMode', false);
+  if(!savedMode){
+    isLiveMode = false;
+    document.getElementById('apiModal').style.display='none';
+  }
   const modal = document.getElementById('apiModal');
 
   // Kayıtlı API key var mı?
