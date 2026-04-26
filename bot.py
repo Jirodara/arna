@@ -1243,6 +1243,19 @@ class APIHandler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
 
     def do_GET(self):
+        if self.path in ('/', '/index.html'):
+            try:
+                with open('/root/arna/index.html', 'rb') as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            except:
+                self.send_response(404)
+                self.end_headers()
+            return
         if self.path in ('/state', '/api/state', '/api'):
             with state_lock:
                 data = json.dumps(_state, ensure_ascii=False).encode('utf-8')
