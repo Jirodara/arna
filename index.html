@@ -1033,6 +1033,23 @@ async function syncOnWake(){
     if(_srv.auto_scan !== undefined && _srv.auto_scan !== autoScanOn){
       autoScanOn = _srv.auto_scan;
       DB.s('autoScanOn', autoScanOn);
+      const b1 = document.getElementById('btnAutoScan');
+      if(b1) b1.classList.toggle('on', autoScanOn);
+      if(autoScanOn && !autoScanTimer){ autoScanTimer=setInterval(()=>{if(!scanning)startScan();},120000); }
+      else if(!autoScanOn && autoScanTimer){ clearInterval(autoScanTimer); autoScanTimer=null; }
+    }
+    if(_srv.auto_trade !== undefined && _srv.auto_trade !== autoTradeOn){
+      autoTradeOn = _srv.auto_trade;
+      DB.s('autoTradeOn', autoTradeOn);
+      const b2 = document.getElementById('btnAutoTrade');
+      if(b2){ b2.classList.toggle('on', autoTradeOn); b2.textContent='🤖 OTO AL/SAT: '+(autoTradeOn?'AÇIK':'KAPALI'); }
+    }
+  }
+  const _srv = await fetchServerState();
+  if(_srv){
+    if(_srv.auto_scan !== undefined && _srv.auto_scan !== autoScanOn){
+      autoScanOn = _srv.auto_scan;
+      DB.s('autoScanOn', autoScanOn);
       if(autoScanOn && !autoScanTimer) toggleAutoScan();
       else if(!autoScanOn && autoScanTimer) toggleAutoScan();
     }
