@@ -2817,7 +2817,7 @@ async function startScan(){
   }
 }
 
-let autoScanOn = false, autoTradeOn = false;
+let autoScanOn = DB.g('autoScanOn', false), autoTradeOn = DB.g('autoTradeOn', false);
 let autoScanTimer = null;
 
 function togglePctFilter(){
