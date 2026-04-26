@@ -424,6 +424,7 @@ body{
   <div class="nav-btn" id="nav-history" onclick="goTab('history')">Geçmiş</div>
   <div class="nav-btn" id="nav-perf" onclick="goTab('perf')">Analiz</div>
   <div class="nav-btn" id="nav-learn" onclick="goTab('learn')">Takip</div>
+    <div class="nav-btn" id="nav-rapor" onclick="goTab('rapor')">📊 Rapor</div>
 </div>
 
 <!-- TARAMA -->
@@ -981,7 +982,7 @@ const DEMO = 2000;
    Telefon açılınca sunucudan güncel state çeker.
 ══════════════════════════════════════════════════ */
 
-const SERVER_URL = 'http://178.104.236.187';
+const SERVER_URL = 'https://arnascanner.duckdns.org';
 let serverOnline = false;
 let lastServerSync = 0;
 let offlineActivities = []; // Telefon kapalıyken yapılanlar
@@ -1027,6 +1028,21 @@ async function sendServer(action, extra={}){
 
 // Telefon açılınca: sunucudan state al
 async function syncOnWake(){
+  const _srv = await fetchServerState();
+  if(_srv){
+    if(_srv.auto_scan !== undefined && _srv.auto_scan !== autoScanOn){
+      autoScanOn = _srv.auto_scan;
+      DB.s('autoScanOn', autoScanOn);
+      if(autoScanOn && !autoScanTimer) toggleAutoScan();
+      else if(!autoScanOn && autoScanTimer) toggleAutoScan();
+    }
+    if(_srv.auto_trade !== undefined && _srv.auto_trade !== autoTradeOn){
+      autoTradeOn = _srv.auto_trade;
+      DB.s('autoTradeOn', autoTradeOn);
+      if(autoTradeOn) toggleAutoTrade();
+      else if(!autoTradeOn) toggleAutoTrade();
+    }
+  }
   const srv = await fetchServerState();
   if(!srv) return;
 
@@ -1328,7 +1344,7 @@ async function pushStateToServer(){
       })),
       demo_bal: demoBal, demo_pnl: demoPnL,
       mode: isLiveMode ? 'live' : 'demo',
-      auto_scan: autoScanOn, auto_trade: autoTradeOn,
+      
       pos_exit_threshold: posExitThreshold
     }
   });
@@ -1574,13 +1590,14 @@ function log(msg,cls){
 
 /* ── TAB ── */
 function goTab(name){
-  ['scan','signals','trade','history','perf','learn'].forEach(n=>{
+  ['scan','signals','trade','history','perf','learn','rapor'].forEach(n=>{
     document.getElementById('nav-'+n).className='nav-btn'+(n===name?' on':'');
     document.getElementById('pg-'+n).className='page'+(n===name?' on':'');
   });
   if(name==='signals')  renderSignals();
   if(name==='trade')    renderTradePage();
   if(name==='history')  renderHistory();
+  if(name==='rapor') renderRapor();
   if(name==='learn')    renderLearn();
   if(name==='perf')     renderPerf();
 }
@@ -4408,6 +4425,53 @@ function startApp(live){
     refreshBal();
   }
 }
+
+function renderRapor(){
+  if(!serverState){setTimeout(renderRapor,500);return;}
+  const ss=serverState.bot_sessions||[];
+  const now=Date.now();
+  let sh='';
+  if(!ss.length){sh='<div style="color:var(--muted);font-size:12px">Henuz veri yok</div>';}
+  else{
+    let tot=0;
+    ss.forEach(s=>{const d=Math.round(((s.end||now)-s.start)/60000);tot+=d;const ds=d>=60?Math.floor(d/60)+'s '+d%60+'dk':d+'dk';sh+='<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span>'+s.start_str+'</span><span style="color:var(--muted)">'+ds+'</span><span>'+(s.end?'⚪':'🟢 Aktif')+'</span></div>';});
+    const ts=tot>=60?Math.floor(tot/60)+'s '+tot%60+'dk':tot+'dk';
+    sh='<div style="font-size:12px;color:var(--up);margin-bottom:6px">Toplam: <b>'+ts+'</b> | '+ss.length+' oturum</div>'+sh;
+  }
+  document.getElementById('rapor-sessions').innerHTML=sh;
+  const hist=(serverState.history||[]).filter(h=>h.result&&h.result!=='open');
+  hist.sort((a,b)=>(b.exit_time||0)-(a.exit_time||0));
+  const wins=hist.filter(h=>h.result==='win').length;
+  const pnl=hist.reduce((s,h)=>s+(h.pnl||0),0);
+  const wr=hist.length?Math.round(wins/hist.length*100):0;
+  document.getElementById('rapor-ozet').innerHTML=hist.length+' islem · %'+wr+' · <span style="color:'+(pnl>=0?'var(--up)':'var(--dn)')+'">'+( pnl>=0?'+':'')+pnl.toFixed(2)+'$</span>';
+  if(!hist.length){document.getElementById('rapor-islemler').innerHTML='<div style="color:var(--muted);font-size:12px">Henuz islem yok</div>';return;}
+  let html='';
+  hist.forEach(h=>{
+    const p=h.pnl||0,pc=p>=0?'var(--up)':'var(--dn)',ps=(p>=0?'+':'')+p.toFixed(2)+'$';
+    const ed=h.entry_time?new Date(h.entry_time).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+    const xd=h.exit_time?new Date(h.exit_time).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+    const dur=h.entry_time&&h.exit_time?Math.round((h.exit_time-h.entry_time)/60000):0;
+    const ds=dur>=60?Math.floor(dur/60)+'s '+dur%60+'dk':dur+'dk';
+    const r=h.exit_reason||h.exitReason||'—';
+    html+='<div style="background:var(--bg2);border-radius:8px;padding:10px;margin-bottom:8px"><div style="display:flex;justify-content:space-between"><span style="font-weight:700;font-size:13px">'+(p>=0?'💰':'⚠️')+' '+(h.display_name||h.symbol)+'</span><span style="color:'+pc+';font-weight:700">'+ps+'</span></div><div style="font-size:11px;color:var(--muted);margin-top:3px">Giris: '+ed+' · '+(h.tf||'—')+' · '+ds+'</div><div style="font-size:11px;color:var(--muted)">Cikis: '+xd+' · <span style="color:'+(r==='SL'?'var(--dn)':r==='TP'?'var(--up)':'var(--muted)')+'">'+r+'</span></div><div style="font-size:11px;color:var(--muted)">$'+(h.entry||0).toFixed(4)+' → $'+(h.exit_price||0).toFixed(4)+'</div></div>';
+  });
+  document.getElementById('rapor-islemler').innerHTML=html;
+}
 </script>
+
+<div id="tab-rapor" class="tab-content" style="display:none;padding:12px;">
+  <div style="background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">⏱ BOT ÇALIŞMA GEÇMİŞİ</div>
+    <div id="rapor-sessions">Yükleniyor...</div>
+  </div>
+  <div style="background:var(--card);border-radius:12px;padding:14px;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:11px;color:var(--muted);">📋 TÜM İŞLEMLER</div>
+      <div id="rapor-ozet" style="font-size:11px;"></div>
+    </div>
+    <div id="rapor-islemler">Yükleniyor...</div>
+  </div>
+</div>
 </body>
 </html>
