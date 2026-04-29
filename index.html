@@ -524,22 +524,13 @@ body{
           <label>Pozisyon $</label>
           <input type="number" id="p-pos" value="400" step="100" min="100" max="2000" onchange="saveParams()">
         </div>
-        <div class="p-group" style="grid-column:1/-1;padding:0">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 4px">
-            <div onclick="toggleHoursPanel()" style="display:flex;align-items:center;gap:6px;cursor:pointer">
-              <span id="hours-arrow" style="color:var(--muted);font-size:12px">▼</span>
-              <label style="cursor:pointer;margin:0">⏰ Aktif Saatler <span id="hours-summary" style="color:var(--muted);font-size:11px"></span></label>
-            </div>
-            <div onclick="toggleHoursActive()" id="hours-toggle" style="padding:4px 12px;border-radius:20px;font-size:11px;cursor:pointer;background:var(--dn);color:#fff">KAPALI</div>
-          </div>
-          <div id="hours-panel" style="display:none;padding:4px 0 8px">
-            <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-              <input type="number" id="p-hour-start" value="6" min="0" max="23" step="1" onchange="saveParams();updateHoursSummary()" style="width:60px;text-align:center;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px">
-              <span style="color:var(--muted)">—</span>
-              <input type="number" id="p-hour-end" value="20" min="1" max="24" step="1" onchange="saveParams();updateHoursSummary()" style="width:60px;text-align:center;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px">
-              <span style="color:var(--muted);font-size:11px">UTC saat</span>
-            </div>
-            <div style="color:var(--muted);font-size:10px">⚠️ Sunucu UTC çalışır. TR saati için -3 çıkar (TR 09–23 → UTC 06–20)</div>
+        <div class="p-group" style="grid-column:1/-1">
+          <label>⏰ Aktif Saatler (OTO AL)</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" id="p-hour-start" value="9" min="0" max="23" step="1" onchange="saveParams()" style="width:64px;text-align:center;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px">
+            <span style="color:var(--muted)">—</span>
+            <input type="number" id="p-hour-end" value="23" min="1" max="24" step="1" onchange="saveParams()" style="width:64px;text-align:center;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px">
+            <span style="color:var(--muted);font-size:11px">saat arası giriş yapılır</span>
           </div>
         </div>
       </div>
@@ -803,9 +794,8 @@ function saveParams(){
     score: document.getElementById('p-score').value,
     trail: document.getElementById('p-trail').value,
     pos:   document.getElementById('p-pos').value,
-    hourStart: document.getElementById('p-hour-start')?.value || 6,
-    hourEnd:   document.getElementById('p-hour-end')?.value || 20,
-    hoursActive: hoursActive,
+    hourStart: document.getElementById('p-hour-start')?.value || 9,
+    hourEnd:   document.getElementById('p-hour-end')?.value || 23,
     pMin:  document.getElementById('p-min').value,
     pMax:  document.getElementById('p-max').value,
     pctFilterOn
@@ -825,8 +815,6 @@ function loadParams(){
   if(p.pMax)  document.getElementById('p-max').value   = p.pMax;
   if(p.hourStart) document.getElementById('p-hour-start').value = p.hourStart;
   if(p.hourEnd)   document.getElementById('p-hour-end').value   = p.hourEnd;
-  if(p.hoursActive && !hoursActive) toggleHoursActive();
-  updateHoursSummary();
   if(p.pctFilterOn !== undefined && p.pctFilterOn !== pctFilterOn){
     togglePctFilter();
   }
@@ -3405,6 +3393,13 @@ function analyzeAndLearn(trades){
     notes.push('🟡 Başarı oranı %'+Math.round(winRate*100)+' — ortalama performans');
   } else {
     notes.push('🔴 Başarı oranı %'+Math.round(winRate*100)+' — filtreler gözden geçirilmeli');
+    changes.push('Min skor eşiği 5 puan artırıldı');
+    // Gerçekten uygula
+    const scoreEl = document.getElementById('p-score');
+    if(scoreEl){
+      const cur = parseInt(scoreEl.value)||80;
+      scoreEl.value = Math.min(95, cur+5);
+    }
   }
 
   if(!notes.length) notes.push('📊 Sistem normal çalışıyor, değişiklik gerekmiyor');
@@ -4129,48 +4124,7 @@ async function _srvSend(action, extra={}){
     });
   }catch(e){}
 }
-let hoursActive = false;
-async function toggleHoursActive(){
-  hoursActive = !hoursActive;
-  const btn = document.getElementById('hours-toggle');
-  const panel = document.getElementById('hours-panel');
-  if(hoursActive){
-    btn.textContent = 'AÇIK';
-    btn.style.background = 'var(--up)';
-    panel.style.display = 'block';
-    document.getElementById('hours-arrow').textContent = '▲';
-  } else {
-    btn.textContent = 'KAPALI';
-    btn.style.background = 'var(--dn)';
-    panel.style.display = 'none';
-    document.getElementById('hours-arrow').textContent = '▼';
-  }
-  updateHoursSummary();
-  saveParams();
-}
-function toggleHoursPanel(){
-  if(!hoursActive) return;
-  const panel = document.getElementById('hours-panel');
-  const arrow = document.getElementById('hours-arrow');
-  if(panel.style.display === 'none'){
-    panel.style.display = 'block';
-    arrow.textContent = '▲';
-  } else {
-    panel.style.display = 'none';
-    arrow.textContent = '▼';
-  }
-}
-function updateHoursSummary(){
-  const el = document.getElementById('hours-summary');
-  if(!el) return;
-  if(!hoursActive){ el.textContent = ''; return; }
-  const s = document.getElementById('p-hour-start')?.value || 6;
-  const e = document.getElementById('p-hour-end')?.value || 20;
-  el.textContent = `(UTC ${s}–${e})`;
-  el.style.color = 'var(--gold)';
-}
-
-
+async function _srvPushConfig(){
   try{
     const tf    = document.getElementById('p-tf')?.value||'1h';
     const score = document.getElementById('p-score')?.value||80;
@@ -4183,9 +4137,8 @@ function updateHoursSummary(){
       pos_usd:parseFloat(pos), pct_filter_on:pctFilterOn,
       min_change:parseFloat(pMin), max_change:parseFloat(pMax),
       active_hours:{
-        start: parseInt(document.getElementById('p-hour-start')?.value||6),
-        end:   parseInt(document.getElementById('p-hour-end')?.value||20),
-        active: hoursActive
+        start: parseInt(document.getElementById('p-hour-start')?.value||9),
+        end:   parseInt(document.getElementById('p-hour-end')?.value||23)
       }
     }});
   }catch(e){}
