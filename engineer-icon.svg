@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#080b0f"/>
+  <text x="256" y="200" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="72" fill="#58a6ff">ARNA</text>
+  <text x="256" y="290" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="48" fill="#8b949e">ENG</text>
+  <rect x="156" y="320" width="200" height="3" rx="2" fill="#58a6ff" opacity=".5"/>
+  <circle cx="180" cy="370" r="16" fill="none" stroke="#58a6ff" stroke-width="3"/>
+  <circle cx="256" cy="370" r="16" fill="#58a6ff"/>
+  <circle cx="332" cy="370" r="16" fill="none" stroke="#58a6ff" stroke-width="3"/>
+  <line x1="196" y1="370" x2="240" y2="370" stroke="#58a6ff" stroke-width="3"/>
+  <line x1="272" y1="370" x2="316" y2="370" stroke="#58a6ff" stroke-width="3"/>
+</svg>

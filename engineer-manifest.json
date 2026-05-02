@@ -1,0 +1,11 @@
+{
+  "name": "ARNA Engineer",
+  "short_name": "Engineer",
+  "description": "ARNA Sistem Mühendisliği — Versiyon Yönetimi",
+  "start_url": "./engineer.html",
+  "display": "standalone",
+  "background_color": "#080b0f",
+  "theme_color": "#58a6ff",
+  "orientation": "portrait-primary",
+  "icons": [{ "src": "engineer-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080b0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ARNA Engineer</title>
+<link rel="manifest" href="./engineer-manifest.json">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@600;700;800&display=swap');
+:root{--bg:#080b0f;--ink1:#0d1117;--ink2:#161b22;--ink3:#21262d;--line:rgba(255,255,255,.07);--text:#e6edf3;--dim:#8b949e;--muted:#484f58;--blue:#58a6ff;--up:#3fb950;--dn:#f85149;--gold:#d29922;--purple:#bc8cff;--orange:#f0883e;--safe:env(safe-area-inset-bottom,0px)}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace}
+.app{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));border-bottom:1px solid var(--line);background:var(--ink1);flex-shrink:0}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:14px;letter-spacing:2px}
+.logo em{color:var(--blue);font-style:normal}
+.hdr-r{display:flex;align-items:center;gap:8px}
+.ver-b{font-size:9px;font-weight:700;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);color:var(--blue);border-radius:4px;padding:3px 7px}
+.stat-b{font-size:9px;color:var(--muted)}
+.page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.page.on{display:flex}
+.scroll{overflow-y:auto;flex:1;padding:14px}
+.scroll::-webkit-scrollbar{width:3px}
+.scroll::-webkit-scrollbar-thumb{background:var(--ink3);border-radius:2px}
+.card{background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.ct{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.upload{border:2px dashed var(--line);border-radius:10px;padding:24px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:12px}
+.upload:hover,.upload:active{border-color:var(--blue);background:rgba(88,166,255,.03)}
+.upload .ico{font-size:32px;margin-bottom:8px}
+.upload p{font-size:10px;color:var(--dim);line-height:1.7}
+.upload strong{color:var(--blue)}
+.frow{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;background:var(--ink2);border:1px solid var(--line);border-radius:8px;margin-bottom:6px;transition:border-color .2s}
+.frow.ch{border-color:rgba(210,153,34,.4)}
+.frow.nw{border-color:rgba(63,185,80,.4)}
+.fl{flex:1;min-width:0}
+.fn{font-size:11px;font-weight:600;color:var(--text);margin-bottom:2px}
+.fm{font-size:8px;color:var(--muted)}
+.ftag{font-size:7px;font-weight:700;letter-spacing:.5px;padding:2px 5px;border-radius:3px;margin-right:4px}
+.t-ch{background:rgba(210,153,34,.15);color:var(--gold)}
+.t-nw{background:rgba(63,185,80,.15);color:var(--up)}
+.t-ok{background:rgba(88,166,255,.1);color:var(--blue)}
+.fa{display:flex;gap:6px;flex-shrink:0}
+.bsm{padding:5px 9px;border-radius:6px;border:1px solid var(--line);background:var(--ink3);color:var(--dim);font-size:9px;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
+.bsm:hover{border-color:var(--blue);color:var(--blue)}
+.bsm.d:hover{border-color:var(--dn);color:var(--dn)}
+.vi{padding:12px;background:var(--ink2);border:1px solid var(--line);border-radius:10px;margin-bottom:8px;transition:border-color .2s}
+.vi.cur{border-color:rgba(63,185,80,.4)}
+.vi:hover{border-color:var(--blue)}
+.vt{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.vn{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:var(--purple)}
+.vlb{font-size:8px;padding:2px 6px;border-radius:3px}
+.lc{background:rgba(63,185,80,.15);color:var(--up)}
+.lo{background:var(--ink3);color:var(--muted)}
+.vd{font-size:10px;color:var(--dim);line-height:1.5;margin-bottom:5px}
+.vdt{font-size:8px;color:var(--muted);margin-bottom:8px}
+.vfr{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.vfb{font-size:8px;padding:2px 6px;border-radius:3px;background:var(--ink3);color:var(--dim)}
+.vfb.ch{background:rgba(88,166,255,.1);color:var(--blue)}
+.vfb.nw{background:rgba(63,185,80,.1);color:var(--up)}
+.vbtns{display:flex;gap:6px}
+.bver{flex:1;padding:7px;border-radius:6px;border:1px solid var(--line);background:var(--ink3);color:var(--dim);font-size:9px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
+.bver.dl:hover{border-color:var(--blue);color:var(--blue)}
+.bver.re:hover{border-color:var(--purple);color:var(--purple)}
+.ci{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:7px;margin-bottom:6px;font-size:10px}
+.c-ok{background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.2)}
+.c-wn{background:rgba(210,153,34,.07);border:1px solid rgba(210,153,34,.2)}
+.c-er{background:rgba(248,81,73,.07);border:1px solid rgba(248,81,73,.2)}
+.cico{font-size:14px;flex-shrink:0;margin-top:1px}
+.ctx{flex:1;line-height:1.5}
+.ctit{font-weight:600;margin-bottom:2px}
+.cdesc{font-size:9px;color:var(--dim)}
+.dr{display:flex;align-items:center;gap:6px;padding:7px 9px;background:var(--ink2);border:1px solid var(--line);border-radius:7px;margin-bottom:5px;font-size:9px}
+.df{color:var(--blue);font-weight:600}
+.da{color:var(--muted)}
+.dt{color:var(--orange);font-weight:600}
+.dw{color:var(--dim);margin-left:auto;font-size:8px;text-align:right;max-width:45%}
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:flex-end;justify-content:center}
+.ov.show{display:flex}
+.modal{background:var(--ink1);border:1px solid var(--line);border-radius:16px 16px 0 0;padding:20px 16px;padding-bottom:max(20px,var(--safe));width:100%;max-width:480px;animation:sup .3s ease}
+@keyframes sup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.mtit{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:6px}
+.msub{font-size:10px;color:var(--dim);margin-bottom:14px;line-height:1.5;white-space:pre-line}
+.mfl{margin-bottom:14px}
+.mfi{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--ink2);border-radius:6px;margin-bottom:4px;font-size:10px}
+.mbtns{display:flex;gap:8px}
+.bapp{flex:1;padding:12px;background:var(--up);border:none;border-radius:9px;color:#000;font-weight:800;font-size:12px;font-family:inherit;cursor:pointer}
+.bcan{flex:1;padding:12px;background:var(--ink2);border:1px solid var(--line);border-radius:9px;color:var(--dim);font-size:12px;font-family:inherit;cursor:pointer}
+.bp{width:100%;padding:12px;background:var(--blue);border:none;border-radius:9px;color:#000;font-weight:800;font-size:12px;font-family:inherit;cursor:pointer;margin-bottom:8px;transition:background .2s}
+.bp:hover{background:#79b8ff}
+.bs{width:100%;padding:11px;background:var(--ink2);border:1px solid var(--line);border-radius:9px;color:var(--dim);font-size:11px;font-family:inherit;cursor:pointer;transition:all .2s}
+.bs:hover{border-color:var(--blue);color:var(--blue)}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:10px;line-height:1.8}
+.eico{font-size:32px;margin-bottom:10px}
+.sh{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;margin-top:16px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.sh:first-child{margin-top:0}
+.bnav{display:flex;border-top:1px solid var(--line);background:var(--ink1);padding-bottom:max(8px,var(--safe));flex-shrink:0}
+.ni{flex:1;padding:10px 4px 6px;text-align:center;cursor:pointer;transition:color .2s;color:var(--muted)}
+.ni.on{color:var(--blue)}
+.nico{font-size:18px;margin-bottom:2px}
+.nlb{font-size:8px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:9px 16px;font-size:10px;color:var(--text);z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+input[type=text],textarea,input[type=search]{background:var(--ink2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-family:inherit;font-size:11px;padding:10px 12px;outline:none;width:100%;transition:border-color .2s;margin-bottom:10px}
+input:focus,textarea:focus{border-color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="hdr">
+  <div class="logo">ARNA <em>ENGINEER</em></div>
+  <div class="hdr-r">
+    <span class="stat-b" id="statB">0 dosya · 0 sürüm</span>
+    <span class="ver-b" id="verB">—</span>
+  </div>
+</div>
+
+<!-- DOSYALAR -->
+<div class="page on" id="pg-files">
+<div class="scroll">
+
+  <div class="upload" onclick="document.getElementById('fi').click()">
+    <div class="ico">📁</div>
+    <p><strong>Dosya Yükle</strong><br>bot.py · brain.py · index.html<br>ve diğer ARNA dosyaları</p>
+  </div>
+  <input type="file" id="fi" multiple accept=".py,.html,.json,.js,.css,.svg,.txt,.md" style="display:none" onchange="onUpload(event)">
+
+  <div class="card">
+    <div class="ct">📄 Aktif Dosyalar</div>
+    <div id="flist"><div class="empty"><div class="eico">📭</div>Henüz dosya yüklenmedi</div></div>
+  </div>
+
+  <div class="card" id="compCard" style="display:none">
+    <div class="ct">🔍 Uyumluluk Raporu</div>
+    <div id="compList"></div>
+  </div>
+
+  <div class="card" id="saveCard" style="display:none">
+    <div class="ct">💾 Yeni Versiyon Kaydet</div>
+    <input id="vdesc" placeholder="Değişikliği açıkla... (örn: Brain v4.2 - filtre analizi eklendi)">
+    <button class="bp" onclick="doSave()">✅ Versiyon Kaydet</button>
+    <button class="bs" onclick="document.getElementById('saveCard').style.display='none'">İptal</button>
+  </div>
+
+</div>
+</div>
+
+<!-- VERSİYONLAR -->
+<div class="page" id="pg-versions">
+<div class="scroll">
+  <div class="card">
+    <div class="ct">🕐 Versiyon Geçmişi</div>
+    <div id="vlist"><div class="empty"><div class="eico">🗂</div>Henüz versiyon kaydedilmedi</div></div>
+  </div>
+</div>
+</div>
+
+<!-- HAFIZA -->
+<div class="page" id="pg-memory">
+<div class="scroll" id="memC">
+  <div class="empty"><div class="eico">🧠</div>Hafıza boş</div>
+</div>
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bnav">
+  <div class="ni on" id="n-files" onclick="goTo('files',this)">
+    <div class="nico">📄</div><div class="nlb">Dosyalar</div>
+  </div>
+  <div class="ni" id="n-versions" onclick="goTo('versions',this)">
+    <div class="nico">🕐</div><div class="nlb">Sürümler</div>
+  </div>
+  <div class="ni" id="n-memory" onclick="goTo('memory',this)">
+    <div class="nico">🧠</div><div class="nlb">Hafıza</div>
+  </div>
+</div>
+
+</div><!-- .app -->
+
+<!-- MODAL -->
+<div class="ov" id="ov">
+<div class="modal">
+  <div class="mtit" id="mt">—</div>
+  <div class="msub" id="ms"></div>
+  <div class="mfl" id="mf"></div>
+  <div class="mbtns">
+    <button class="bapp" id="mok">✅ Onayla</button>
+    <button class="bcan" onclick="closeModal()">İptal</button>
+  </div>
+</div>
+</div>
+
+<div class="toast" id="t"></div>
+
+<script>
+'use strict';
+
+const SK_FILES='eng_f', SK_VERS='eng_v', SK_META='eng_m';
+
+async function sg(k){try{const r=await window.storage.get(k);return r?JSON.parse(r.value):null;}catch{return null;}}
+async function ss(k,v){try{await window.storage.set(k,JSON.stringify(v));}catch(e){console.error(e);}}
+
+let F={}, M={}, V=[], P={};
+
+async function init(){
+  F=await sg(SK_FILES)||{};
+  M=await sg(SK_META)||{};
+  V=await sg(SK_VERS)||[];
+  P={};
+  render();
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('./engineer-sw.js').catch(()=>{});
+}
+
+function role(n){
+  if(n==='bot.py') return 'Trade motoru';
+  if(n==='brain.py') return 'Otonom beyin';
+  if(n.includes('index')) return 'Web arayüzü';
+  if(n.includes('config')) return 'Konfigürasyon';
+  if(n.includes('sw')&&n.endsWith('.js')) return 'Service Worker';
+  if(n.includes('manifest')) return 'PWA Manifest';
+  if(n.includes('icon')) return 'İkon';
+  if(n.includes('attribution')) return 'Analiz aracı';
+  return 'Sistem dosyası';
+}
+
+async function onUpload(e){
+  const files=Array.from(e.target.files);
+  if(!files.length) return;
+  for(const f of files){
+    const c=await f.text();
+    const isNew=!F[f.name];
+    const changed=F[f.name]&&F[f.name]!==c;
+    P[f.name]={c,isNew,changed};
+    F[f.name]=c;
+    M[f.name]={size:f.size,lines:c.split('\n').length,uploaded:new Date().toLocaleString('tr'),changed:changed?new Date().toLocaleString('tr'):(M[f.name]?.changed||null),role:role(f.name),isNew,wasChanged:changed};
+  }
+  await ss(SK_FILES,F); await ss(SK_META,M);
+  render(); compat();
+  if(Object.keys(P).length) document.getElementById('saveCard').style.display='block';
+  toast(`✅ ${files.length} dosya yüklendi`);
+  e.target.value='';
+}
+
+function compat(){
+  const res=[];
+  const ns=Object.keys(F);
+  const exp=['bot.py','brain.py','index.html'];
+  for(const f of exp){
+    if(ns.includes(f)) res.push({t:'ok',ti:`${f} mevcut`,d:M[f]?.role||''});
+    else res.push({t:'wn',ti:`${f} eksik`,d:'Sistem eksik çalışabilir'});
+  }
+  if(F['bot.py']&&F['brain.py']){
+    const bb=F['bot.py'].includes('8766')||F['bot.py'].includes('brain');
+    const br=F['brain.py'].includes('8765')||F['brain.py'].includes('bot');
+    if(bb&&br) res.push({t:'ok',ti:'bot.py ↔ brain.py bağlantısı sağlam',d:'Port referansları mevcut'});
+    else res.push({t:'wn',ti:'bot.py ↔ brain.py bağlantısı zayıf',d:'Port referansları eksik olabilir'});
+  }
+  if(F['index.html']&&F['bot.py']){
+    const ok=F['index.html'].includes('/api')||F['index.html'].includes('/state')||F['index.html'].includes('8765');
+    res.push(ok?{t:'ok',ti:'index.html ↔ bot.py sağlam',d:'API endpoint referansları var'}:{t:'wn',ti:'index.html ↔ bot.py zayıf',d:'API referansları eksik olabilir'});
+  }
+  if(F['index.html']&&F['brain.py']){
+    const ok=F['index.html'].includes('brain')||F['index.html'].includes('8766');
+    res.push(ok?{t:'ok',ti:'index.html ↔ brain.py sağlam',d:'Brain referansları var'}:{t:'wn',ti:'index.html ↔ brain.py zayıf',d:'Brain endpoint eksik olabilir'});
+  }
+  const changed=Object.entries(P).filter(([,v])=>v.changed).map(([k])=>k);
+  if(changed.includes('bot.py')) res.push({t:'wn',ti:'bot.py değişti',d:'index.html ve brain.py uyumluluğunu kontrol et'});
+  if(changed.includes('brain.py')) res.push({t:'wn',ti:'brain.py değişti',d:'bot.py bağlantısını kontrol et'});
+  if(changed.includes('index.html')) res.push({t:'wn',ti:'index.html değişti',d:'API endpoint uyumluluğunu kontrol et'});
+  const ico={ok:'✅',wn:'⚠️',er:'❌'};
+  const cls={ok:'c-ok',wn:'c-wn',er:'c-er'};
+  document.getElementById('compCard').style.display='block';
+  document.getElementById('compList').innerHTML=res.map(r=>`<div class="ci ${cls[r.t]}"><span class="cico">${ico[r.t]}</span><div class="ctx"><div class="ctit">${r.ti}</div>${r.d?`<div class="cdesc">${r.d}</div>`:''}</div></div>`).join('');
+}
+
+function doSave(){
+  const desc=document.getElementById('vdesc').value.trim();
+  if(!desc){toast('⚠️ Açıklama yaz');return;}
+  if(!Object.keys(F).length){toast('⚠️ Dosya yok');return;}
+  const updated=Object.entries(P).filter(([,v])=>v.changed).map(([k])=>k);
+  const added=Object.entries(P).filter(([,v])=>v.isNew).map(([k])=>k);
+  showModal('💾 Versiyon Kaydet',`${desc}\n\nDeğişen: ${updated.join(', ')||'yok'}\nYeni: ${added.join(', ')||'yok'}`,Object.keys(F),async()=>{
+    const vn=V.length+1;
+    V.unshift({v:vn,label:`v${vn}`,desc,date:new Date().toLocaleString('tr'),ts:Date.now(),files:{...F},changed:updated,added,fileCount:Object.keys(F).length});
+    P={};
+    await ss(SK_VERS,V);
+    document.getElementById('vdesc').value='';
+    document.getElementById('saveCard').style.display='none';
+    render(); toast(`✅ v${vn} kaydedildi`);
+  });
+}
+
+function restoreVer(idx){
+  const ver=V[idx];
+  if(!ver) return;
+  showModal(`↩️ v${ver.v} Versiyonuna Dön`,`${ver.desc}\n${ver.date}\n\n${ver.fileCount} dosya aktif hale gelecek.`,Object.keys(ver.files),async()=>{
+    F={...ver.files}; M={};
+    for(const n of Object.keys(F)) M[n]={role:role(n),lines:F[n].split('\n').length,uploaded:ver.date,changed:null};
+    P={};
+    await ss(SK_FILES,F); await ss(SK_META,M);
+    render(); toast(`↩️ v${ver.v} geri yüklendi`);
+  });
+}
+
+function dl(name,content){
+  const b=new Blob([content],{type:'text/plain'});
+  const u=URL.createObjectURL(b);
+  const a=document.createElement('a');
+  a.href=u;a.download=name;a.click();
+  URL.revokeObjectURL(u);
+}
+function dlFile(n){if(F[n]){dl(n,F[n]);toast(`⬇ ${n}`);}}
+function dlAll(){let i=0;for(const[n,c] of Object.entries(F)) setTimeout(()=>dl(n,c),i++*150);toast(`⬇ ${Object.keys(F).length} dosya`);}
+function dlVer(idx){const ver=V[idx];if(!ver)return;let i=0;for(const[n,c] of Object.entries(ver.files)) setTimeout(()=>dl(n,c),i++*150);toast(`⬇ v${ver.v} — ${Object.keys(ver.files).length} dosya`);}
+
+async function rmFile(n){
+  if(!confirm(`"${n}" silinsin mi?`))return;
+  delete F[n];delete M[n];delete P[n];
+  await ss(SK_FILES,F);await ss(SK_META,M);
+  render();toast(`🗑 ${n} silindi`);
+}
+
+function render(){
+  // Header
+  document.getElementById('statB').textContent=`${Object.keys(F).length} dosya · ${V.length} sürüm`;
+  document.getElementById('verB').textContent=V.length?V[0].label:'—';
+  // Files
+  const ns=Object.keys(F);
+  const curV=V[0];
+  document.getElementById('flist').innerHTML=ns.length?ns.map(n=>{
+    const m=M[n]||{};
+    const p=P[n];
+    const inCur=curV&&curV.changed?.includes(n);
+    const isN=p?.isNew||(!curV&&m.isNew);
+    let tags=isN?'<span class="ftag t-nw">YENİ</span>':(p?.changed||inCur)?'<span class="ftag t-ch">DEĞİŞTİ</span>':'<span class="ftag t-ok">TAMAM</span>';
+    return `<div class="frow ${p?.changed||inCur?'ch':''} ${isN?'nw':''}"><div class="fl"><div class="fn">${tags}${n}</div><div class="fm">${m.role||''} · ${m.lines||0} satır${m.changed?' · '+m.changed:''}</div></div><div class="fa"><button class="bsm" onclick="dlFile('${n}')">⬇</button><button class="bsm d" onclick="rmFile('${n}')">✕</button></div></div>`;
+  }).join('')+(ns.length>1?`<button class="bs" style="margin-top:8px" onclick="dlAll()">⬇ Tümünü İndir</button>`):'<div class="empty"><div class="eico">📭</div>Henüz dosya yüklenmedi</div>';
+  // Versions
+  document.getElementById('vlist').innerHTML=V.length?V.map((ver,idx)=>{
+    const ic=idx===0;
+    const cb=(ver.changed||[]).map(f=>`<span class="vfb ch">${f}</span>`).join('');
+    const ab=(ver.added||[]).map(f=>`<span class="vfb nw">${f}</span>`).join('');
+    const rb=Object.keys(ver.files).filter(f=>!(ver.changed||[]).includes(f)&&!(ver.added||[]).includes(f)).map(f=>`<span class="vfb">${f}</span>`).join('');
+    return `<div class="vi ${ic?'cur':''}"><div class="vt"><span class="vn">${ver.label}</span><span class="vlb ${ic?'lc':'lo'}">${ic?'Aktif':'Geçmiş'}</span></div><div class="vd">${ver.desc}</div><div class="vdt">${ver.date} · ${ver.fileCount} dosya</div><div class="vfr">${cb}${ab}${rb}</div><div class="vbtns"><button class="bver dl" onclick="dlVer(${idx})">⬇ İndir</button>${!ic?`<button class="bver re" onclick="restoreVer(${idx})">↩ Geri Dön</button>`:''}</div></div>`;
+  }).join(''):'<div class="empty"><div class="eico">🗂</div>Henüz versiyon kaydedilmedi</div>';
+  // Memory
+  const deps=[
+    {f:'index.html',t:'bot.py',w:'GET /state · POST /api'},
+    {f:'index.html',t:'brain.py',w:'GET /brain · POST /brain'},
+    {f:'brain.py',t:'bot.py',w:'localhost:8765 config'},
+    {f:'bot.py',t:'brain.py',w:'localhost:8766 scan raporu'},
+    {f:'bot.py',t:'state',w:'/root/arna_state.json'},
+    {f:'brain.py',t:'brain_data',w:'/root/brain_data.json'},
+  ].filter(d=>ns.some(n=>n.includes(d.f.replace('.html','').replace('.py',''))));
+  let h=ns.length?`<div class="sh">📄 Sistem Dosyaları (${ns.length})</div>`+ns.map(n=>{const m=M[n]||{};return`<div class="dr" style="flex-wrap:wrap;gap:4px"><span class="df">${n}</span><span style="color:var(--muted);font-size:9px">${m.lines||0} satır</span><span style="color:var(--dim);font-size:9px;width:100%">${m.role||''}</span></div>`;}).join(''):'';
+  if(deps.length) h+=`<div class="sh">🔗 Dependency Map</div>`+deps.map(d=>`<div class="dr"><span class="df">${d.f}</span><span class="da">→</span><span class="dt">${d.t}</span><span class="dw">${d.w}</span></div>`).join('');
+  if(V.length) h+=`<div class="sh">🕐 Versiyon Özeti (${V.length})</div>`+V.slice(0,5).map(ver=>`<div class="dr" style="flex-wrap:wrap"><span style="color:var(--purple);font-weight:700">${ver.label}</span><span style="color:var(--muted);font-size:8px">${ver.date}</span><span style="color:var(--dim);font-size:9px;width:100%">${ver.desc}</span>${(ver.changed||[]).map(f=>`<span class="vfb ch">${f}</span>`).join('')}</div>`).join('');
+  document.getElementById('memC').innerHTML=h||'<div class="empty"><div class="eico">🧠</div>Hafıza boş. Dosya yükleyince dolmaya başlar.</div>';
+}
+
+let _mcb=null;
+function showModal(ti,su,files,cb){
+  document.getElementById('mt').textContent=ti;
+  document.getElementById('ms').textContent=su;
+  document.getElementById('mf').innerHTML=files.map(f=>`<div class="mfi"><span>📄</span><span>${f}</span></div>`).join('');
+  document.getElementById('ov').classList.add('show');
+  _mcb=cb;
+  document.getElementById('mok').onclick=()=>{closeModal();if(_mcb)_mcb();};
+}
+function closeModal(){document.getElementById('ov').classList.remove('show');_mcb=null;}
+
+function goTo(p,el){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.ni').forEach(x=>x.classList.remove('on'));
+  document.getElementById('pg-'+p).classList.add('on');
+  el.classList.add('on');
+}
+
+let _tt=null;
+function toast(m){const e=document.getElementById('t');e.textContent=m;e.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove('show'),2500);}
+
+init();
+</script>
+</body>
+</html>
