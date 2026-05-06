@@ -549,7 +549,7 @@ body{
             <div style="color:var(--muted);font-size:11px;margin-top:2px">OTO AL durduruldu. Piyasayı değerlendirip manuel reset yapabilirsin.</div>
             <button onclick="resetKillSwitch()" style="margin-top:6px;padding:4px 12px;border-radius:6px;background:var(--up);color:#fff;border:none;cursor:pointer;font-size:12px">✅ Sıfırla ve Devam Et</button>
           </div>
-          <div id="kill-switch-panel" style="display:none;margin-top:6px;padding:8px;border-radius:8px;background:rgba(239,68,68,.15);border:1px solid var(--dn)">
+          <div data-dup-removed="kill-switch-panel" style="display:none;margin-top:6px;padding:8px;border-radius:8px;background:rgba(239,68,68,.15);border:1px solid var(--dn)">
             <div style="color:var(--dn);font-size:12px;font-weight:600">⛔ KILL SWITCH AKTİF — 3 ardışık SL</div>
             <div style="color:var(--muted);font-size:11px;margin-top:2px">OTO AL durduruldu. Piyasayı değerlendirip manuel reset yapabilirsin.</div>
             <button onclick="resetKillSwitch()" style="margin-top:6px;padding:4px 12px;border-radius:6px;background:var(--up);color:#fff;border:none;cursor:pointer;font-size:12px">✅ Sıfırla ve Devam Et</button>
@@ -1978,7 +1978,7 @@ function priceScore(change){
   if(change>=3&&change<=5) return 20;
   if(change>=2&&change<3)  return 12;
   if(change>5&&change<=7)  return 10;
-  return 4;
+  return 5;
 }
 
 /* TOPLAM SKOR */
