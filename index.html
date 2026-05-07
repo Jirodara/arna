@@ -422,7 +422,6 @@ body{
   <div class="nav-btn" id="nav-history" onclick="goTab('history')">Geçmiş</div>
   <div class="nav-btn" id="nav-perf" onclick="goTab('perf')">Analiz</div>
   <div class="nav-btn" id="nav-learn" onclick="goTab('learn')">Takip</div>
-  <div class="nav-btn" id="nav-brain" onclick="goTab('brain')">🧠</div>
 </div>
 
 <!-- TARAMA -->
@@ -606,96 +605,6 @@ body{
 </div>
 
 <!-- BEYİN SAYFASI -->
-<div class="page" id="pg-brain">
-  <div class="scroll" style="padding:14px">
-
-    <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button id="btnBrainOnOff" onclick="brainToggle()" style="flex:1;padding:9px;border-radius:10px;background:var(--up);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600">🧠 BEYİN AKTİF</button>
-      <button onclick="brainEmergency()" style="padding:9px 12px;border-radius:10px;background:var(--dn);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600">⛔ ACİL</button>
-      <button onclick="brainReset()" style="padding:9px 12px;border-radius:10px;background:var(--ink2);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-size:11px">🔄 Sıfırla</button>
-    </div>
-
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">🧠 Beyin Durumu</div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">Son Analiz</span><span id="b-last" style="font-size:10px;color:var(--text)">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">Bekleyen Öneri</span><span id="b-pending" style="font-size:10px;font-weight:700;color:var(--gold)">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">Alım Durumu</span><span id="b-trade" style="font-size:10px;font-weight:700">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">Kod Bütünlüğü</span><span id="b-code" style="font-size:10px;font-weight:700">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span style="font-size:10px;color:var(--dim)">Toplam Trade</span><span id="b-trades" style="font-size:10px;color:var(--text)">—</span></div>
-    </div>
-
-    <div id="b-pos-alerts" style="display:none;background:rgba(239,68,68,.08);border:1px solid var(--dn);border-radius:10px;padding:10px;margin-bottom:10px">
-      <div style="font-size:10px;font-weight:600;color:var(--dn);margin-bottom:4px">⚠️ Pozisyon Uyarıları</div>
-      <div id="b-pos-list"></div>
-    </div>
-
-    <div id="b-warns" style="display:none;background:rgba(251,191,36,.08);border:1px solid var(--gold);border-radius:10px;padding:10px;margin-bottom:10px">
-      <div style="font-size:10px;font-weight:600;color:var(--gold);margin-bottom:4px">📝 Değişiklik Uyarıları</div>
-      <div id="b-warns-list"></div>
-    </div>
-
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">📋 Bekleyen Öneriler</div>
-      <div id="b-proposals"><div style="color:var(--muted);font-size:11px;text-align:center;padding:8px">✅ Bekleyen öneri yok</div></div>
-    </div>
-
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">📈 Öğrenme</div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">✅ En iyi saatler (UTC)</span><span id="b-best-h" style="font-size:10px;color:var(--up)">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">❌ En kötü saatler</span><span id="b-worst-h" style="font-size:10px;color:var(--dn)">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span style="font-size:10px;color:var(--dim)">✅ En iyi TF</span><span id="b-best-tf" style="font-size:10px;color:var(--up)">—</span></div>
-      <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="font-size:10px;color:var(--dim)">❌ En kötü TF</span><span id="b-worst-tf" style="font-size:10px;color:var(--dn)">—</span></div>
-    </div>
-
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">🔍 Kod Değerlendirme</div>
-      <div style="display:flex;gap:6px;margin-bottom:6px">
-        <select id="b-rev-file" style="flex:1;padding:6px;border-radius:7px;background:var(--ink2);border:1px solid var(--border);color:var(--text);font-size:11px">
-          <option value="bot.py">bot.py</option>
-          <option value="index.html">index.html</option>
-        </select>
-        <button onclick="brainReview()" style="padding:6px 12px;border-radius:7px;background:var(--gold);color:#000;border:none;cursor:pointer;font-size:11px;font-weight:600">Analiz Et</button>
-      </div>
-      <textarea id="b-rev-code" placeholder="Kodu buraya yapıştır..." style="width:100%;height:70px;padding:7px;border-radius:7px;background:var(--ink2);border:1px solid var(--border);color:var(--text);font-size:11px;resize:vertical;box-sizing:border-box"></textarea>
-      <div id="b-rev-result" style="margin-top:6px"></div>
-    </div>
-
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">💬 Beyin ile Konuş</div>
-      <div id="b-chat" style="max-height:200px;overflow-y:auto;margin-bottom:8px"></div>
-      <div style="display:flex;gap:6px">
-        <input id="b-chat-inp" type="text" placeholder="durum, performans, öneri, öğrenme..." style="flex:1;padding:8px;border-radius:8px;background:var(--ink2);border:1px solid var(--border);color:var(--text);font-size:11px" onkeydown="if(event.key==='Enter')brainChat()">
-        <button onclick="brainChat()" style="padding:8px 14px;border-radius:8px;background:var(--up);color:#fff;border:none;cursor:pointer;font-size:12px">↑</button>
-      </div>
-    </div>
-
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">📜 Öneri Geçmişi</div>
-      <div id="b-history"><div style="color:var(--muted);font-size:10px;text-align:center">Henüz yok</div></div>
-    </div>
-
-    <!-- YENİ: MÜDAHALELERİ -->
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">🔧 Brain Müdahaleleri</div>
-      <div id="b-interventions"><div style="color:var(--muted);font-size:10px;text-align:center">Henüz müdahale yok</div></div>
-    </div>
-
-    <!-- YENİ: FİLTRE ETKİNLİĞİ -->
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">🔍 Filtre Etkinliği</div>
-      <div id="b-filter-stats"><div style="color:var(--muted);font-size:10px;text-align:center">Tarama bekleniyor...</div></div>
-    </div>
-
-    <!-- YENİ: SON TARAMA BİLGİSİ -->
-    <div style="background:var(--ink1);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
-      <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">📡 Son Tarama Detayı</div>
-      <div id="b-last-scan"><div style="color:var(--muted);font-size:10px;text-align:center">Tarama bekleniyor...</div></div>
-    </div>
-
-  </div>
-</div>
-
-<!-- TAKİP & ÖĞRENME -->
 <div class="page" id="pg-learn">
   <div class="scroll" style="padding:14px">
 
@@ -1350,7 +1259,7 @@ function log(msg,cls){
 
 /* ── TAB ── */
 function goTab(name){
-  ['scan','signals','trade','history','perf','learn','brain'].forEach(n=>{
+  ['scan','signals','trade','history','perf','learn'].forEach(n=>{
     document.getElementById('nav-'+n).className='nav-btn'+(n===name?' on':'');
     document.getElementById('pg-'+n).className='page'+(n===name?' on':'');
   });
@@ -1359,7 +1268,6 @@ function goTab(name){
   if(name==='history')  renderHistory();
   if(name==='learn')    renderLearn();
   if(name==='perf')     renderPerf();
-  if(name==='brain')    renderBrain();
 }
 
 /* ── BAL BAR ── */
@@ -4531,131 +4439,7 @@ async function _srvPushConfig(){
 }
 
 // ══ BRAIN JS ══
-const BRAIN_URL = 'https://arnascanner.duckdns.org/brain';
 
-async function _bGet(){
-  try{ const r=await fetch(BRAIN_URL,{cache:'no-store'}); if(!r.ok)return null; return await r.json(); }
-  catch(e){ return null; }
-}
-async function _bPost(d){
-  try{ const r=await fetch(BRAIN_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); return r.ok?await r.json():null; }
-  catch(e){ return null; }
-}
-function _el(id){ return document.getElementById(id); }
-function _set(id,v,col){ const e=_el(id); if(e){ e.textContent=v; if(col) e.style.color=col; } }
-
-async function renderBrain(){
-  const b = await _bGet();
-  if(!b){ 
-    _set('b-last','Bağlantı hatası','var(--dn)');
-    return; 
-  }
-  const sys=b.system_state||{}, learn=b.learning||{};
-  _set('b-last', sys.last_check||'—');
-  const pc=(b.pending_proposals||[]).length;
-  _set('b-pending', pc, pc>0?'var(--dn)':'var(--up)');
-  _set('b-trade', sys.trading_blocked?'⛔ DURDURULDU':'✅ Aktif', sys.trading_blocked?'var(--dn)':'var(--up)');
-  _set('b-code', sys.code_ok===false?'❌ Eksik':'✅ Tam', sys.code_ok===false?'var(--dn)':'var(--up)');
-  _set('b-trades', learn.total_trades||0);
-
-  const tb=_el('btnBrainOnOff');
-  if(tb){ tb.textContent=b.active?'🧠 BEYİN AKTİF':'🧠 BEYİN PASİF'; tb.style.background=b.active?'var(--up)':'var(--muted)'; }
-
-  // Pozisyon uyarıları
-  const pa=b.position_alerts||[];
-  const pab=_el('b-pos-alerts'), pal=_el('b-pos-list');
-  if(pab&&pal){ if(pa.length>0){ pab.style.display='block'; pal.innerHTML=pa.map(a=>`<div style="font-size:10px;padding:2px 0;color:${a.type==='CRITICAL'?'var(--dn)':'var(--gold)'}">${a.msg}</div>`).join(''); } else pab.style.display='none'; }
-
-  // Değişiklik uyarıları
-  const ws=(sys.warnings||[]).slice(0,5);
-  const wb=_el('b-warns'), wl=_el('b-warns-list');
-  if(wb&&wl){ if(ws.length>0){ wb.style.display='block'; wl.innerHTML=ws.map(w=>`<div style="font-size:10px;padding:2px 0;color:${w.type==='OK'?'var(--up)':w.type==='WARNING'?'var(--dn)':'var(--gold)'}">${w.msg}</div>`).join(''); } else wb.style.display='none'; }
-
-  // Öneriler
-  const props=b.pending_proposals||[];
-  const pl=_el('b-proposals');
-  if(pl){
-    if(props.length===0){
-      pl.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:8px">✅ Bekleyen öneri yok</div>';
-    } else {
-      pl.innerHTML=props.map(p=>{
-        const bc=p.type==='CRITICAL'?'var(--dn)':p.type==='WARNING'?'var(--gold)':'var(--up)';
-        return `<div style="background:var(--ink2);border-radius:8px;padding:10px;margin-bottom:8px;border-left:3px solid ${bc}">
-          <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px">${p.title}</div>
-          <div style="font-size:10px;color:var(--muted);white-space:pre-wrap;margin-bottom:4px">${p.detail}</div>
-          <div style="font-size:10px;color:var(--dim)">Güven: %${p.confidence} · ${p.created}</div>
-          ${p.blocking?'<div style="font-size:10px;color:var(--dn);margin-top:3px">⛔ Onaylanana kadar alım durduruldu</div>':''}
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button onclick="brainApprove('${p.id}')" style="flex:1;padding:6px;border-radius:6px;background:var(--up);color:#fff;border:none;cursor:pointer;font-size:11px;font-weight:600">✅ Onayla</button>
-            <button onclick="brainRejectP('${p.id}')" style="flex:1;padding:6px;border-radius:6px;background:var(--dn);color:#fff;border:none;cursor:pointer;font-size:11px">❌ Reddet</button>
-          </div>
-        </div>`;
-      }).join('');
-    }
-  }
-
-  // Öğrenme
-  const bh=learn.best_hours||[], wh=learn.worst_hours||[], btf=learn.best_tfs||[], wtf=learn.worst_tfs||[];
-  _set('b-best-h',  bh.length?bh.slice(0,4).map(h=>h+':xx').join(', '):'Yeterli veri yok');
-  _set('b-worst-h', wh.length?wh.slice(0,3).map(h=>h+':xx').join(', '):'-');
-  _set('b-best-tf',  btf.length?btf.slice(0,3).join(', '):'Yeterli veri yok');
-  _set('b-worst-tf', wtf.length?wtf.slice(0,3).join(', '):'-');
-
-  // Sohbet geçmişi
-  const convs=(b.conversations||[]).slice(0,10).reverse();
-  const ch=_el('b-chat');
-  if(ch && convs.length>0){
-    ch.innerHTML=convs.map(cv=>`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--gold)">Sen: ${cv.user}</div><div style="font-size:11px;color:var(--text);background:var(--ink2);padding:6px 8px;border-radius:6px;white-space:pre-wrap">${cv.brain}</div></div>`).join('');
-    ch.scrollTop=ch.scrollHeight;
-  }
-
-  // Geçmiş öneriler
-  const hist=[...(b.approved_proposals||[]).slice(0,3),...(b.rejected_proposals||[]).slice(0,3)];
-  const hl=_el('b-history');
-  if(hl){
-    if(hist.length===0){ hl.innerHTML='<div style="color:var(--muted);font-size:10px;text-align:center">Henüz yok</div>'; }
-    else{ hl.innerHTML=hist.map(p=>`<div style="padding:5px 0;border-bottom:1px solid var(--line)"><div style="font-size:11px;color:${p.status==='approved'?'var(--up)':'var(--dn)'}">${p.status==='approved'?'✅':'❌'} ${p.title}</div><div style="font-size:10px;color:var(--dim)">${p.approved_time||p.rejected_time||''}</div></div>`).join(''); }
-  }
-
-  // YENİ: Müdahaleler
-  renderInterventions(b.interventions||[]);
-
-  // YENİ: Filtre istatistikleri
-  renderFilterStats(b.filter_stats||{}, b.scan_reports||[]);
-
-  // YENİ: Son tarama
-  renderLastScan(b.scan_reports||[]);
-}
-
-async function brainApprove(id){ await _bPost({action:'approve_proposal',proposal_id:id}); renderBrain(); }
-async function brainRejectP(id){ const r=prompt('Reddetme nedeni (boş bırakabilirsin):')||''; await _bPost({action:'reject_proposal',proposal_id:id,reason:r}); renderBrain(); }
-async function brainToggle(){ await _bPost({action:'toggle_brain'}); renderBrain(); }
-async function brainEmergency(){ if(!confirm('Acil durdurma? Brain durur.'))return; await _bPost({action:'emergency_stop'}); renderBrain(); }
-async function brainReset(){ if(!confirm('Tüm brain verisi silinecek. Emin misin?'))return; await _bPost({action:'reset_brain'}); renderBrain(); }
-
-async function brainChat(){
-  const inp=_el('b-chat-inp'); if(!inp||!inp.value.trim())return;
-  const msg=inp.value.trim(); inp.value='';
-  const ch=_el('b-chat');
-  if(ch){ ch.innerHTML+=`<div style="margin-bottom:4px"><span style="font-size:10px;color:var(--gold)">Sen: ${msg}</span></div>`; ch.scrollTop=ch.scrollHeight; }
-  const r=await _bPost({action:'chat',message:msg});
-  if(r&&r.reply&&ch){ ch.innerHTML+=`<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--text);background:var(--ink2);padding:6px 8px;border-radius:6px;white-space:pre-wrap">${r.reply}</div></div>`; ch.scrollTop=ch.scrollHeight; }
-}
-
-async function brainReview(){
-  const code=_el('b-rev-code')?.value; const fname=_el('b-rev-file')?.value||'bot.py';
-  if(!code||!code.trim()){ alert('Kodu yapıştır'); return; }
-  const result=await _bPost({action:'review_code',code,filename:fname});
-  const el=_el('b-rev-result'); if(!result||!el)return;
-  const col=result.approved?'var(--up)':'var(--dn)';
-  el.innerHTML=`<div style="font-size:12px;font-weight:600;color:${col};margin-bottom:4px">${result.summary}</div><div style="font-size:10px;color:var(--muted);margin-bottom:4px">${result.recommendation||''}</div>${(result.issues||[]).map(i=>`<div style="font-size:10px;color:var(--dn);padding:1px 0">${i}</div>`).join('')}${(result.goods||[]).slice(0,4).map(g=>`<div style="font-size:10px;color:var(--up);padding:1px 0">${g}</div>`).join('')}`;
-}
-
-// 30 saniyede bir güncelle (brain sekmesi açıksa)
-setInterval(function(){
-  var bp=document.getElementById('pg-brain');
-  if(bp && bp.className.indexOf('on')>=0) renderBrain();
-}, 30000);
 
 // ── MÜDAHALELERİ RENDER ──
 function renderInterventions(ivs){
