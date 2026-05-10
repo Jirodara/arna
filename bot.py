@@ -1568,6 +1568,20 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(result).encode())
                 return
 
+            elif action == 'backtest':
+                symbol    = cmd.get('symbol', 'BTCUSDT')
+                tf        = cmd.get('tf', '3m')
+                days      = int(cmd.get('days', 7))
+                min_score = int(cmd.get('min_score', 80))
+                pos_usd   = float(cmd.get('pos_usd', 400))
+                trail_pct = float(cmd.get('trail_pct', 1.5))
+                result = run_backtest(symbol, tf, days, min_score, pos_usd, trail_pct)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+                return
             elif action == 'reset_demo':
                 # Demo bakiye ve geçmişi sıfırla
                 _state['demo_bal']  = 2000
