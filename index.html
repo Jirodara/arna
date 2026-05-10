@@ -4050,7 +4050,30 @@ window.addEventListener('pageshow',(e)=>{
 
 /* ── BACKTEST ── */
 var btInited = false;
-async function runBacktest(){
+async function runBestScan(){
+  const tf=document.getElementById('bt-tf').value;
+  const days=document.getElementById('bt-days').value;
+  const minScore=document.getElementById('bt-min-score').value;
+  const el=document.getElementById('bt-scan-res');
+  el.innerHTML='<div style="color:var(--gold);text-align:center;padding:12px">⏳ Taranıyor... (20 coin, ~30sn)</div>';
+  _srvCmd({action:'backtest_scan',tf,days:parseInt(days),min_score:parseInt(minScore)},120000)
+    .then(d=>{
+      if(!d.results||!d.results.length){el.innerHTML='<div style="color:#f66">Sonuç yok</div>';return;}
+      let h='<div class="card-title" style="margin-top:8px">🏆 SIRALANMIŞ COİNLER</div>';
+      d.results.slice(0,10).forEach((r,i)=>{
+        const pnlColor=r.total_pnl>=0?'#4f4':'#f66';
+        h+=`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)">
+          <span>${i+1}. <b style="color:var(--gold)">${r.symbol.replace('USDT','')}</b></span>
+          <span>%${r.win_rate} WR</span>
+          <span style="color:${pnlColor}">${r.total_pnl>=0?'+':''}$${r.total_pnl.toFixed(2)}</span>
+          <span style="color:#aaa">PF:${r.profit_factor}</span>
+        </div>`;
+      });
+      el.innerHTML=h;
+    })
+    .catch(e=>el.innerHTML='<div style="color:#f66">Hata: '+e.message+'</div>');
+}
+function runBacktest(){
   const sym   = document.getElementById('bt-symbol').value.trim().toUpperCase();
   const tf    = document.getElementById('bt-tf').value;
   const days  = document.getElementById('bt-days').value;
@@ -4660,6 +4683,8 @@ function renderLastScan(scans){
         </div>
       </div>
       <button onclick="runBacktest()" id="bt-btn" style="width:100%;padding:12px;background:var(--gold);color:#000;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">⚡ BACKTEST BAŞLAT</button>
+  <button onclick="runBestScan()" style="width:100%;padding:12px;background:#1a6b3a;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;margin-top:8px;cursor:pointer">🔍 EN İYİ COİNİ BUL</button>
+  <div id="bt-scan-res" style="margin-top:12px"></div>
     </div>
     <div id="bt-results"></div>
   </div>

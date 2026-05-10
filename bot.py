@@ -1582,6 +1582,40 @@ class APIHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(result).encode())
                 return
+            elif action == 'backtest_scan':
+                tf        = cmd.get('tf', '3m')
+                days      = int(cmd.get('days', 7))
+                min_score = int(cmd.get('min_score', 70))
+                pos_usd   = float(cmd.get('pos_usd', 400))
+                trail_pct = float(cmd.get('trail_pct', 1.5))
+                # Tarama listesindeki ilk 20 coini backteste sok
+                symbols = [s for s in _state.get('scan_list', [
+                    'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT',
+                    'ADAUSDT','DOGEUSDT','AVAXUSDT','LINKUSDT','DOTUSDT',
+                    'MATICUSDT','LTCUSDT','UNIUSDT','ATOMUSDT','NEARUSDT',
+                    'APTUSDT','ARBUSDT','OPUSDT','INJUSDT','SUIUSDT'
+                ])][:20]
+                results = []
+                for sym in symbols:
+                    try:
+                        r = run_backtest(sym, tf, days, min_score, pos_usd, trail_pct)
+                        if r.get('stats'):
+                            results.append({
+                                'symbol': sym,
+                                'win_rate': r['stats'].get('win_rate', 0),
+                                'total_pnl': r['stats'].get('total_pnl', 0),
+                                'trades': r['stats'].get('total_trades', 0),
+                                'profit_factor': r['stats'].get('profit_factor', 0)
+                            })
+                    except:
+                        pass
+                results.sort(key=lambda x: (x['win_rate'], x['total_pnl']), reverse=True)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'results': results}).encode())
+                return
             elif action == 'reset_demo':
                 # Demo bakiye ve geçmişi sıfırla
                 _state['demo_bal']  = 2000
