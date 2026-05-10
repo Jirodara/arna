@@ -422,6 +422,7 @@ body{
   <div class="nav-btn" id="nav-history" onclick="goTab('history')">Geçmiş</div>
   <div class="nav-btn" id="nav-perf" onclick="goTab('perf')">Analiz</div>
   <div class="nav-btn" id="nav-learn" onclick="goTab('learn')">Takip</div>
+  <div class="nav-btn" id="nav-backtest" onclick="goTab('backtest')">Backtest</div>
 </div>
 
 <!-- TARAMA -->
@@ -1261,6 +1262,7 @@ function log(msg,cls){
 function goTab(name){
   ['scan','signals','trade','history','perf','learn'].forEach(n=>{
     document.getElementById('nav-'+n).className='nav-btn'+(n===name?' on':'');
+    if(name==='backtest' && !btInited){ btInited=true; }
     document.getElementById('pg-'+n).className='page'+(n===name?' on':'');
   });
   if(name==='signals')  renderSignals();
@@ -4045,6 +4047,93 @@ window.addEventListener('pageshow',(e)=>{
 /* ── BAŞLAT ── */
 
 // Parametreleri ve logları yükle
+
+/* ── BACKTEST ── */
+var btInited = false;
+async function runBacktest(){
+  const sym   = document.getElementById('bt-symbol').value.trim().toUpperCase();
+  const tf    = document.getElementById('bt-tf').value;
+  const days  = document.getElementById('bt-days').value;
+  const score = document.getElementById('bt-score').value;
+  const btn   = document.getElementById('bt-btn');
+  const res   = document.getElementById('bt-results');
+  btn.textContent = '⏳ Hesaplanıyor...'; btn.disabled = true;
+  res.innerHTML = '<div class="card" style="text-align:center;color:var(--muted)">Binance verisi çekiliyor...</div>';
+  try {
+    const r = await fetch('/api', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'backtest', symbol:sym, tf:tf, days:parseInt(days), min_score:parseInt(score)})});
+    const d = await r.json();
+    if(d.error){ res.innerHTML='<div class="card" style="color:var(--dn)">❌ '+d.error+'</div>'; return; }
+    const s = d.stats;
+    const pnlCol = s.total_pnl>=0?'var(--up)':'var(--dn)';
+    const pfCol  = s.profit_factor>=1?'var(--up)':'var(--dn)';
+    const wrCol  = s.win_rate>=50?'var(--up)':'var(--dn)';
+    let sesHtml = '';
+    for(const [k,v] of Object.entries(s.session_stats||{})){
+      const sc = v.pnl>=0?'var(--up)':'var(--dn)';
+      sesHtml += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)">
+        <span style="color:var(--gold)">${k}</span>
+        <span>${v.total} trade · %${v.win_rate}</span>
+        <span style="color:${sc}">${v.pnl>=0?'+':''}$${v.pnl}</span>
+      </div>`;
+    }
+    let trHtml = '';
+    const trades = d.trades || [];
+    trades.slice().reverse().forEach(t=>{
+      const col = t.result==='win'?'var(--up)':'var(--dn)';
+      const dt  = new Date(t.entry_time).toLocaleDateString('tr-TR',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      trHtml += `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:11px">
+        <span style="color:var(--muted)">${dt}</span>
+        <span>${t.session}</span>
+        <span style="color:${col}">${t.result==='win'?'✅':'❌'} ${t.reason}</span>
+        <span style="color:${col}">${t.pnl_usd>=0?'+':''}$${t.pnl_usd}</span>
+      </div>`;
+    });
+    res.innerHTML = `
+      <div class="card">
+        <div class="card-title">📈 SONUÇLAR — ${sym} ${tf} · ${days}g · Skor≥${score}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+          <div style="text-align:center;background:var(--ink2);border-radius:8px;padding:10px">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">WIN RATE</div>
+            <div style="font-size:20px;font-weight:700;color:${wrCol}">${s.win_rate}%</div>
+          </div>
+          <div style="text-align:center;background:var(--ink2);border-radius:8px;padding:10px">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">TOPLAM KAR</div>
+            <div style="font-size:20px;font-weight:700;color:${pnlCol}">${s.total_pnl>=0?'+':''}$${s.total_pnl}</div>
+          </div>
+          <div style="text-align:center;background:var(--ink2);border-radius:8px;padding:10px">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px">PROFIT FACTOR</div>
+            <div style="font-size:20px;font-weight:700;color:${pfCol}">${s.profit_factor}</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px">
+          <div style="background:var(--ink2);border-radius:8px;padding:8px">
+            <span style="color:var(--muted)">Toplam Trade</span><br><strong>${s.total}</strong> (${s.wins}W / ${s.losses}L)
+          </div>
+          <div style="background:var(--ink2);border-radius:8px;padding:8px">
+            <span style="color:var(--muted)">Expectancy</span><br><strong style="color:${s.expectancy>=0?'var(--up)':'var(--dn)'}">${s.expectancy>=0?'+':''}$${s.expectancy}</strong>
+          </div>
+          <div style="background:var(--ink2);border-radius:8px;padding:8px">
+            <span style="color:var(--muted)">Ort. Kazanç</span><br><strong style="color:var(--up)">+$${s.avg_win}</strong>
+          </div>
+          <div style="background:var(--ink2);border-radius:8px;padding:8px">
+            <span style="color:var(--muted)">Max Drawdown</span><br><strong style="color:var(--dn)">-$${s.max_drawdown}</strong>
+          </div>
+        </div>
+        <div class="card-title" style="margin-bottom:8px">🌍 SEANS BAZLI</div>
+        ${sesHtml}
+      </div>
+      <div class="card">
+        <div class="card-title">📋 SON İŞLEMLER (${trades.length})</div>
+        ${trHtml}
+      </div>`;
+  } catch(e){
+    res.innerHTML='<div class="card" style="color:var(--dn)">❌ Hata: '+e.message+'</div>';
+  } finally {
+    btn.textContent='⚡ BACKTEST BAŞLAT'; btn.disabled=false;
+  }
+}
+
 loadParams();
 loadLogs();
 
@@ -4527,5 +4616,54 @@ function renderLastScan(scans){
 }
 
 </script>
+
+<!-- BACKTEST -->
+<div class="page" id="pg-backtest">
+  <div class="scroll">
+    <div class="card">
+      <div class="card-title">📊 BACKTEST</div>
+      <div class="params">
+        <div class="param-box">
+          <div class="param-label">Coin</div>
+          <input id="bt-symbol" class="param-input" value="BTCUSDT" style="width:100%;background:var(--ink2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px;font-size:13px">
+        </div>
+        <div class="param-box">
+          <div class="param-label">Zaman Dilimi</div>
+          <select id="bt-tf" class="param-input" style="width:100%;background:var(--ink2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px;font-size:13px">
+            <option value="1m">1m</option>
+            <option value="3m" selected>3m</option>
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="30m">30m</option>
+            <option value="1h">1h</option>
+            <option value="2h">2h</option>
+            <option value="4h">4h</option>
+          </select>
+        </div>
+        <div class="param-box">
+          <div class="param-label">Gün Sayısı</div>
+          <select id="bt-days" class="param-input" style="width:100%;background:var(--ink2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px;font-size:13px">
+            <option value="3">3 gün</option>
+            <option value="7" selected>7 gün</option>
+            <option value="14">14 gün</option>
+            <option value="30">30 gün</option>
+          </select>
+        </div>
+        <div class="param-box">
+          <div class="param-label">Min Skor</div>
+          <select id="bt-score" class="param-input" style="width:100%;background:var(--ink2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px;font-size:13px">
+            <option value="75">75</option>
+            <option value="80" selected>80</option>
+            <option value="85">85</option>
+            <option value="90">90</option>
+          </select>
+        </div>
+      </div>
+      <button onclick="runBacktest()" id="bt-btn" style="width:100%;padding:12px;background:var(--gold);color:#000;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">⚡ BACKTEST BAŞLAT</button>
+    </div>
+    <div id="bt-results"></div>
+  </div>
+</div>
+
 </body>
 </html>
