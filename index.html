@@ -4056,7 +4056,6 @@ async function runBestScan(){
   const minScore=document.getElementById('bt-min-score').value;
   const el=document.getElementById('bt-scan-res');
   el.innerHTML='<div style="color:var(--gold);text-align:center;padding:12px">⏳ Taranıyor... (20 coin, ~30sn)</div>';
-  _srvSend('backtest_scan',{tf,days:parseInt(days),min_score:parseInt(minScore)})
     .then(d=>{
       if(!d.results||!d.results.length){el.innerHTML='<div style="color:#f66">Sonuç yok</div>';return;}
       let h='<div class="card-title" style="margin-top:8px">🏆 SIRALANMIŞ COİNLER</div>';
