@@ -4073,6 +4073,29 @@ async function runBestScan(){
     })
     .catch(e=>el.innerHTML='<div style="color:#f66">Hata: '+e.message+'</div>');
 }
+function runBestScan(){
+  const tf=document.getElementById('bt-tf').value;
+  const days=parseInt(document.getElementById('bt-days').value);
+  const minScore=parseInt(document.getElementById('bt-min-score').value);
+  const el=document.getElementById('bt-scan-res');
+  if(!el) return;
+  el.innerHTML='<div style="color:var(--gold);text-align:center;padding:12px">⏳ Taranıyor... (~30sn)</div>';
+  _srvSend('backtest_scan',{tf,days,min_score:minScore})
+    .then(d=>{
+      if(!d||!d.results||!d.results.length){el.innerHTML='<div style="color:#f66">Sonuç yok</div>';return;}
+      let h='<div style="font-weight:700;margin:8px 0;color:var(--gold)">🏆 SIRALANMIŞ COİNLER</div>';
+      d.results.slice(0,10).forEach((r,i)=>{
+        const clr=r.total_pnl>=0?'#4f4':'#f66';
+        h+=`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px">
+          <span>${i+1}. <b style="color:var(--gold)">${r.symbol.replace('USDT','')}</b></span>
+          <span>%${r.win_rate} WR</span>
+          <span style="color:${clr}">${r.total_pnl>=0?'+':''}$${r.total_pnl.toFixed(2)}</span>
+        </div>`;
+      });
+      el.innerHTML=h;
+    })
+    .catch(e=>{el.innerHTML='<div style="color:#f66">Hata</div>';});
+}
 function runBacktest(){
   const sym   = document.getElementById('bt-symbol').value.trim().toUpperCase();
   const tf    = document.getElementById('bt-tf').value;
