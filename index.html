@@ -4076,7 +4076,7 @@ async function runBestScan(){
 function runBestScan(){
   const tf=document.getElementById('bt-tf').value;
   const days=parseInt(document.getElementById('bt-days').value);
-  const minScore=parseInt(document.getElementById('bt-min-score').value);
+  const minScoreEl=document.getElementById('bt-min-score'); const minScore=minScoreEl?parseInt(minScoreEl.value):70;
   const el=document.getElementById('bt-scan-res');
   if(!el) return;
   el.innerHTML='<div style="color:var(--gold);text-align:center;padding:12px">⏳ Taranıyor... (~30sn)</div>';
