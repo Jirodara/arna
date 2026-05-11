@@ -4565,7 +4565,8 @@ function runBestScan(){
   var el=document.getElementById('bt-scan-res');
   if(!el) return;
   el.innerHTML='<div style="color:var(--gold);text-align:center;padding:12px">Taranıyor... (~30sn)</div>';
-  _srvSend('backtest_scan',{tf:tf,days:days,min_score:70})
+  fetch('https://arnascanner.duckdns.org/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'backtest_scan',tf:tf,days:days,min_score:70})})
+    .then(function(r){return r.json();})
     .then(function(d){
       if(!d||!d.results||!d.results.length){el.innerHTML='<div style="color:#f66">Sonuc yok</div>';return;}
       var h='<div style="font-weight:700;margin:8px 0;color:var(--gold)">SIRALI COINLER</div>';
