@@ -422,7 +422,6 @@ body{
   <div class="nav-btn" id="nav-history" onclick="goTab('history')">Geçmiş</div>
   <div class="nav-btn" id="nav-perf" onclick="goTab('perf')">Analiz</div>
   <div class="nav-btn" id="nav-learn" onclick="goTab('learn')">Takip</div>
-  <div class="nav-btn" id="nav-backtest" onclick="goTab('backtest')">Backtest</div>
 </div>
 
 <!-- TARAMA -->
@@ -1260,7 +1259,7 @@ function log(msg,cls){
 
 /* ── TAB ── */
 function goTab(name){
-  ['scan','signals','trade','history','perf','learn','backtest'].forEach(n=>{
+  ['scan','signals','trade','history','perf','learn'].forEach(n=>{
     document.getElementById('nav-'+n).className='nav-btn'+(n===name?' on':'');
     document.getElementById('pg-'+n).className='page'+(n===name?' on':'');
   });
@@ -4527,57 +4526,6 @@ function renderLastScan(scans){
       </div>`).join('')}`;
 }
 
-</script>
-
-
-<div class="page" id="pg-backtest">
-  <div class="scroll">
-    <div class="card">
-      <div class="card-title">BACKTEST</div>
-      <div class="param-box">
-        <div class="param-label">Zaman Dilimi</div>
-        <select id="bt-tf" style="width:100%;background:var(--ink2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px">
-          <option value="1m">1m</option>
-          <option value="3m" selected>3m</option>
-          <option value="5m">5m</option>
-          <option value="15m">15m</option>
-          <option value="1h">1h</option>
-        </select>
-      </div>
-      <div class="param-box">
-        <div class="param-label">Gun Sayisi</div>
-        <select id="bt-days" style="width:100%;background:var(--ink2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:14px">
-          <option value="3">3 gun</option>
-          <option value="5" selected>5 gun</option>
-          <option value="7">7 gun</option>
-          <option value="14">14 gun</option>
-        </select>
-      </div>
-      <button onclick="runBestScan()" style="width:100%;padding:14px;background:#1a6b3a;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;margin-top:12px;cursor:pointer">EN IYI COINI BUL</button>
-      <div id="bt-scan-res" style="margin-top:12px"></div>
-    </div>
-  </div>
-</div>
-<script>
-function runBestScan(){
-  var tf=document.getElementById('bt-tf').value;
-  var days=parseInt(document.getElementById('bt-days').value);
-  var el=document.getElementById('bt-scan-res');
-  if(!el) return;
-  el.innerHTML='<div style="color:var(--gold);text-align:center;padding:12px">Taranıyor... (~30sn)</div>';
-  fetch('https://arnascanner.duckdns.org/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'backtest_scan',tf:tf,days:days,min_score:70})})
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(!d||!d.results||!d.results.length){el.innerHTML='<div style="color:#f66">Sonuc yok</div>';return;}
-      var h='<div style="font-weight:700;margin:8px 0;color:var(--gold)">SIRALI COINLER</div>';
-      d.results.slice(0,10).forEach(function(r,i){
-        var clr=r.total_pnl>=0?'#4f4':'#f66';
-        h+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px"><span>'+(i+1)+'. '+r.symbol.replace('USDT','')+'</span><span style="color:'+clr+'">'+(r.total_pnl>=0?'+':'')+'$'+r.total_pnl.toFixed(2)+'</span></div>';
-      });
-      el.innerHTML=h;
-    })
-    .catch(function(){el.innerHTML='<div style="color:#f66">Hata</div>';});
-}
 </script>
 </body>
 </html>
