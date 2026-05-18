@@ -597,7 +597,7 @@ def scan_market(state, config):
             vol_usd = float(raw['quoteVolume'])
             if is_try:
                 vol_usd /= usd_try
-            if vol_usd < 5_000_000:
+            if vol_usd < 50_000_000:
                 continue
             if int(raw['count']) < 10000:
                 continue
@@ -1642,7 +1642,9 @@ class APIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 def run_api():
+    HTTPServer.allow_reuse_address = True
     server = HTTPServer(('0.0.0.0', 8765), APIHandler)
+    server.socket.setsockopt(1, 2, 1)
     print('API sunucu başlatıldı: port 8765')
     server.serve_forever()
 
