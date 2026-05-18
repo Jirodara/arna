@@ -597,7 +597,7 @@ def scan_market(state, config):
             vol_usd = float(raw['quoteVolume'])
             if is_try:
                 vol_usd /= usd_try
-            if vol_usd < 50_000_000:
+            if vol_usd < 5_000_000:
                 continue
             if int(raw['count']) < 10000:
                 continue
@@ -1538,84 +1538,6 @@ class APIHandler(BaseHTTPRequestHandler):
                 log_msg(_state, '✅ Kill Switch sıfırlandı — OTO AL tekrar aktif', 'up')
                 save_state(_state)
 
-            elif action == 'backtest':
-                symbol    = cmd.get('symbol', 'BTCUSDT')
-                tf        = cmd.get('tf', '3m')
-                days      = int(cmd.get('days', 7))
-                min_score = int(cmd.get('min_score', 80))
-                pos_usd   = float(cmd.get('pos_usd', 400))
-                trail_pct = float(cmd.get('trail_pct', 1.5))
-                result = run_backtest(symbol, tf, days, min_score, pos_usd, trail_pct)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps(result).encode())
-                return
-
-            elif action == 'backtest':
-                symbol    = cmd.get('symbol', 'BTCUSDT')
-                tf        = cmd.get('tf', '3m')
-                days      = int(cmd.get('days', 7))
-                min_score = int(cmd.get('min_score', 80))
-                pos_usd   = float(cmd.get('pos_usd', 400))
-                trail_pct = float(cmd.get('trail_pct', 1.5))
-                result = run_backtest(symbol, tf, days, min_score, pos_usd, trail_pct)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps(result).encode())
-                return
-
-            elif action == 'backtest':
-                symbol    = cmd.get('symbol', 'BTCUSDT')
-                tf        = cmd.get('tf', '3m')
-                days      = int(cmd.get('days', 7))
-                min_score = int(cmd.get('min_score', 80))
-                pos_usd   = float(cmd.get('pos_usd', 400))
-                trail_pct = float(cmd.get('trail_pct', 1.5))
-                result = run_backtest(symbol, tf, days, min_score, pos_usd, trail_pct)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps(result).encode())
-                return
-            elif action == 'backtest_scan':
-                tf        = cmd.get('tf', '3m')
-                days      = int(cmd.get('days', 7))
-                min_score = int(cmd.get('min_score', 70))
-                pos_usd   = float(cmd.get('pos_usd', 400))
-                trail_pct = float(cmd.get('trail_pct', 1.5))
-                # Tarama listesindeki ilk 20 coini backteste sok
-                symbols = [s for s in _state.get('scan_list', [
-                    'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT',
-                    'ADAUSDT','DOGEUSDT','AVAXUSDT','LINKUSDT','DOTUSDT',
-                    'MATICUSDT','LTCUSDT','UNIUSDT','ATOMUSDT','NEARUSDT',
-                    'APTUSDT','ARBUSDT','OPUSDT','INJUSDT','SUIUSDT'
-                ])][:20]
-                results = []
-                for sym in symbols:
-                    try:
-                        r = run_backtest(sym, tf, days, min_score, pos_usd, trail_pct)
-                        if r.get('stats'):
-                            results.append({
-                                'symbol': sym,
-                                'win_rate': r['stats'].get('win_rate', 0),
-                                'total_pnl': r['stats'].get('total_pnl', 0),
-                                'trades': r['stats'].get('total_trades', 0),
-                                'profit_factor': r['stats'].get('profit_factor', 0)
-                            })
-                    except:
-                        pass
-                results.sort(key=lambda x: (x['win_rate'], x['total_pnl']), reverse=True)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps({'results': results}).encode())
-                return
             elif action == 'reset_demo':
                 # Demo bakiye ve geçmişi sıfırla
                 _state['demo_bal']  = 2000
@@ -1642,90 +1564,13 @@ class APIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 def run_api():
-    HTTPServer.allow_reuse_address = True
     server = HTTPServer(('0.0.0.0', 8765), APIHandler)
-    server.socket.setsockopt(1, 2, 1)
     print('API sunucu başlatıldı: port 8765')
     server.serve_forever()
 
 # ══════════════════════════════════════════════════
 # ANA DÖNGÜ
 # ══════════════════════════════════════════════════
-
-
-def run_backtest(symbol, tf, days, min_score, pos_usd=400, trail_pct=1.5):
-    tf_minutes = {'1m':1,'3m':3,'5m':5,'15m':15,'30m':30,'1h':60,'2h':120,'4h':240}
-    mins_per_bar = tf_minutes.get(tf, 60)
-    total_bars = min(int(days * 1440 / mins_per_bar), 1000)
-    data = binance_get('/klines', {'symbol': symbol, 'interval': tf, 'limit': total_bars})
-    if not data or len(data) < 60:
-        return {'error': 'Yetersiz veri', 'trades': [], 'stats': {}}
-    klines = [{'o':float(k[1]),'h':float(k[2]),'l':float(k[3]),'c':float(k[4]),'v':float(k[5]),'open_time':k[0],'close_time':k[6]} for k in data]
-    trades = []
-    in_pos = False
-    entry_price = sl = tp = trail_sl = entry_idx = entry_time = pos_score = 0
-    for i in range(40, len(klines)-1):
-        window = klines[:i+1]
-        closes = [k['c'] for k in window]
-        price = closes[-1]
-        if not in_pos:
-            tr = trend_filt(closes); rsi = rsi_filt(closes)
-            bol = boll_filt(closes, price); vol = vol_filt(window)
-            chg = abs((closes[-1]-closes[max(0,i-24)])/closes[max(0,i-24)]*100) if i>24 else 2.0
-            score = total_score(tr, rsi, bol, vol, chg)
-            if score >= min_score and tr['pass'] and rsi['pass'] and bol['pass'] and vol['pass']:
-                in_pos = True; entry_price = price; entry_idx = i
-                entry_time = klines[i]['open_time']; pos_score = score
-                sl_sw = swing_low(window, 10)
-                atr = calc_atr(window, 14) or price*0.015
-                sl = max(sl_sw, price - atr*1.5)
-                if sl >= price: sl = price*0.985
-                tp = calc_tp(price, score, sl)['tp']
-                trail_sl = sl
-        else:
-            high = klines[i]['h']; low = klines[i]['l']
-            new_trail = high*(1-trail_pct/100)
-            if new_trail > trail_sl: trail_sl = new_trail
-            pnl_usd = (price-entry_price)/entry_price*pos_usd
-            if pnl_usd >= 1.70 and trail_sl < entry_price: trail_sl = entry_price
-            exit_price = exit_reason = None
-            if low <= trail_sl: exit_price = trail_sl; exit_reason = 'TRAIL_SL'
-            elif low <= sl: exit_price = sl; exit_reason = 'SL'
-            elif high >= tp: exit_price = tp; exit_reason = 'TP'
-            if exit_price:
-                pnl_pct = (exit_price-entry_price)/entry_price*100
-                pnl_usd = pnl_pct/100*pos_usd
-                hour = datetime.utcfromtimestamp(entry_time/1000).hour
-                session = 'EU' if 7<=hour<15 else 'US' if 15<=hour<22 else 'ASIA'
-                trades.append({'entry':entry_price,'exit':exit_price,'pnl_pct':round(pnl_pct,3),'pnl_usd':round(pnl_usd,2),'result':'win' if pnl_usd>0 else 'loss','reason':exit_reason,'score':pos_score,'bars':i-entry_idx,'session':session,'entry_time':entry_time})
-                in_pos = False; entry_price = sl = tp = trail_sl = 0
-    total = len(trades)
-    if total == 0:
-        return {'error':'Trade bulunamadı — min_score çok yüksek olabilir','trades':[],'stats':{}}
-    wins = [t for t in trades if t['result']=='win']
-    losses = [t for t in trades if t['result']=='loss']
-    total_pnl = sum(t['pnl_usd'] for t in trades)
-    gp = sum(t['pnl_usd'] for t in wins)
-    gl = abs(sum(t['pnl_usd'] for t in losses))
-    pf = round(gp/gl,2) if gl>0 else 99
-    wr = round(len(wins)/total*100,1)
-    aw = round(sum(t['pnl_usd'] for t in wins)/len(wins),2) if wins else 0
-    al = round(sum(t['pnl_usd'] for t in losses)/len(losses),2) if losses else 0
-    exp = round((wr/100*aw)+((1-wr/100)*al),2)
-    ss = {}
-    for s in ['EU','US','ASIA']:
-        st = [t for t in trades if t['session']==s]
-        sw = [t for t in st if t['result']=='win']
-        if st: ss[s] = {'total':len(st),'wins':len(sw),'win_rate':round(len(sw)/len(st)*100,1),'pnl':round(sum(t['pnl_usd'] for t in st),2)}
-    rs = {r:len([t for t in trades if t['reason']==r]) for r in ['TP','TRAIL_SL','SL']}
-    eq = pk = md = 0
-    for t in trades:
-        eq += t['pnl_usd']
-        if eq>pk: pk=eq
-        dd=pk-eq
-        if dd>md: md=dd
-    stats = {'total':total,'wins':len(wins),'losses':len(losses),'win_rate':wr,'total_pnl':round(total_pnl,2),'profit_factor':pf,'avg_win':aw,'avg_loss':al,'expectancy':exp,'max_drawdown':round(md,2),'session_stats':ss,'reason_stats':rs,'gross_profit':round(gp,2),'gross_loss':round(gl,2)}
-    return {'trades':trades[-50:],'stats':stats,'error':None}
 
 def main():
     global _state, _config
@@ -1823,8 +1668,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# ══════════════════════════════════════════════════
-# BACKTEST ENGINE
-# ══════════════════════════════════════════════════
-
